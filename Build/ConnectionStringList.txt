@@ -1,0 +1,92 @@
+
+
+
+**
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/Training" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=Training;User ID=Training_AppUser;Password=BBT2016ChooChoo!" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=Training;User ID=Training_AppUser;Password=BBT2016ChooChoo!" />
+</parameters>
+
+**
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/DemoV23" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=DemoV23;User ID=DemoV23_AppUser;Password=BBT2016Ver23!" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=DemoV23;User ID=DemoV23_AppUser;Password=BBT2016Ver23!" />
+</parameters>
+
+
+**
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/DemoV22" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=DemoV22;User ID=DemoV22_AppUser;Password=BBT2016Ver22!" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=DemoV22;User ID=DemoV22_AppUser;Password=BBT2016Ver22!" />
+</parameters>
+
+**
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/Demo" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=Demo;User ID=Demo_AppUser;Password=BBT2015!DemoDemo" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=Demo;User ID=Demo_AppUser;Password=BBT2015!DemoDemo" />
+</parameters>
+
+**
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/MHS" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=MHS;User ID=MHS_AppUser;Password=BBT2015!Dean" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=MHS;User ID=MHS_AppUser;Password=BBT2015!Dean" />
+</parameters>
+
+**
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/Nemours" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=Nemours;User ID=Nemours_AppUser;Password=BBT2015!Nemmy" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=Nemours;User ID=Nemours_AppUser;Password=BBT2015!Nemmy" />
+</parameters>
+
+
+**
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/NGHS" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=NGHS;User ID=NGHS_AppUser;Password=BBT2015!NGHS" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=NGHS;User ID=NGHS_AppUser;Password=BBT2015!NGHS" />
+</parameters>
+
+**
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/TJUH" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=TJUH;User ID=TJUH_AppUser;Password=BBT2015!TJUH" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=TJUH;User ID=TJUH_AppUser;Password=BBT2015!TJUH" />
+</parameters>
+
+**
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/UTMC" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=UTMC;User ID=UTMC_AppUser;Password=BBT2015!UTMC" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=UTMC;User ID=UTMC_AppUser;Password=BBT2015!UTMC" />
+</parameters>
+**
+
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/Caldwell" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=Caldwell;User ID=Caldwell_AppUser;Password=BBT2015!Caldwell" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=Caldwell;User ID=Caldwell_AppUser;Password=BBT2015!Caldwell" />
+</parameters>
+
+**
+<parameters>
+  <setParameter name="IIS Web Application Name" value="Default Web Site/CHOMP" />
+  <setParameter name="DefaultConnection-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=CHOMP;User ID=CHOMP_AppUser;Password=BBT2015!YumYum" />
+  <setParameter name="BlueBinHardwareConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=BlueBinHardware;User ID=BlueBinHardware_AppUser;Password=BBTHardyHar123!" />
+  <setParameter name="Site_ConnectionString-Web.config Connection String" value="Data Source=sqlprod.bluebin.com;Initial Catalog=CHOMP;User ID=CHOMP_AppUser;Password=BBT2015!YumYum" />
+</parameters>
