@@ -1,3 +1,5 @@
+--*****************************************************
+--**************************SPROC**********************
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaShadow') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectGembaShadow
 GO
@@ -11,6 +13,7 @@ AS
 BEGIN
 SET NOCOUNT ON
 	SELECT 
+		BlueBinResourceID,
 		LastName + ', ' + FirstName + ' (' + Login + ')' as FullName 
 	
 	FROM [bluebin].[BlueBinResource] 

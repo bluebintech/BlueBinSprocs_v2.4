@@ -38,7 +38,7 @@ ClinicalDescription = @ClinicalDescription,
 [Sequence] = @Sequence,
 [RequesterUserID] = @Requester,
 ApprovedBy = @ApprovedBy,
-[AssignedUserID] = @Assigned,
+[AssignedUserID] = case when @Assigned not in (select BlueBinUserID from bluebin.BlueBinUser) then NULL else @Assigned end,
 [QCNCID] =  @QCNComplexity,
 [QCNTypeID] = (select max([QCNTypeID]) from [qcn].[QCNType] where [Name] = @QCNType),
 [Details] = @Details,
@@ -61,3 +61,4 @@ END
 GO
 grant exec on sp_EditQCN to appusers
 GO
+

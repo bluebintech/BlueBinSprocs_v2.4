@@ -36,7 +36,7 @@ AS
        b.LocationKey AS LocationKey,
        c.LocationKey AS ShipLocationKey,
        case when @Facility is not null or @Facility <> '' then @Facility else '' end as ShipFacilityKey,
-       c.BlueBinFlag,
+       ISNULL(c.BlueBinFlag,0) as BlueBinFlag,
 	   d.ItemKey AS ItemKey,
        '' AS  SourceSystem,
        Picks.ORDER_NO AS ReqNumber,

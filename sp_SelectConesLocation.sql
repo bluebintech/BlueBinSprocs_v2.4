@@ -13,7 +13,7 @@ Select distinct a.LocationID,rTrim(a.ItemID) as ItemID,COALESCE(b.ItemClinicalDe
 from [bluebin].[DimBin] a 
                                 inner join [bluebin].[DimItem] b on rtrim(a.ItemID) = rtrim(b.ItemID)  
 								UNION 
-								select distinct LocationID,'' as ItemID,'' as ItemClinicalDescription, ''  as ExtendedDescription from [bluebin].[DimBin]
+								select distinct LocationID,'' as ItemID,'' as ItemClinicalDescription, '--Select--'  as ExtendedDescription from [bluebin].[DimBin]
                                        
 								UNION 
 								select distinct q.LocationID,rTrim(q.ItemID) as ItemID,COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description'),rTrim(q.ItemID)+ ' - ' + COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description') as ExtendedDescription  

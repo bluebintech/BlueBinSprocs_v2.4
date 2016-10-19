@@ -1,9 +1,8 @@
 
 	
-	
-	--Upgrade Script v2.3Select
---Backward compatible to V1.0
---Created By Gerry Butler 20160426
+--Upgrade Script v2.4
+--Backward compatible to V2.3
+--Created By Gerry Butler 20161001
 
 SET ANSI_NULLS ON
 GO
@@ -17,10 +16,16 @@ GO
 SET NOCOUNT ON
 GO
 
---select 'DB Updating: ' + DB_NAME()
---*************************************************************************************************************************************************
---Schema Updates
---*************************************************************************************************************************************************
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
+--Schema Creation
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
+
 
 --*****************************************************
 --**************************NEWSCHEMA**********************
@@ -66,480 +71,162 @@ Print 'Schema Updates Complete'
 --*************************************************************************************************************************************************
 --Table Updates
 --*************************************************************************************************************************************************
-/*
-if exists(select email from bluebin.BlueBinUser)
+--2.4
+
+--*********************************************************************************************************************
+--*********************************************************************************************************************
+--PRODUCTIVITY MODULE CREATION
+--*********************************************************************************************************************
+--*********************************************************************************************************************
+
+
+if not exists(select * from bluebin.Config where ConfigName like 'MENU-PP-Observation')  
 BEGIN
-alter table bluebin.BlueBinUser add Email varchar(50);
-update bluebin.BlueBinUser set Email = email;
-alter table bluebin.BlueBinUser drop column email;
-END
-*/
---2.2
-
-
-
---2.2
-
---*******************
---User and Operations
---ALTER TABLE bluebin.BlueBinUser ALTER COLUMN UserLogin varchar(60)
---GO
---ALTER TABLE bluebin.BlueBinUser ALTER COLUMN Email varchar(60)
---GO
---ALTER TABLE bluebin.BlueBinResource ALTER COLUMN [Login] varchar(60)
---GO
---ALTER TABLE bluebin.BlueBinResource ALTER COLUMN Email varchar(60)
---GO
---ALTER TABLE bluebin.Config ALTER COLUMN ConfigValue varchar(100)
---GO
---ALTER TABLE bluebin.DimWarehouseItem ALTER COLUMN LocationID char(10)
---GO
---ALTER TABLE gemba.GembaAuditNode ALTER COLUMN LocationID char(10)
---GO
---ALTER TABLE qcn.QCN ADD InternalReference varchar(50)
---GO
-
-
---2.3
-/*
---*******************************************************************************************************************************************
---*******************************************************************************************************************************************
---MAJOR QCN CHANGE --Run this the first time you run the upgrade
---*******************************************************************************************************************************************
---*******************************************************************************************************************************************
-
-if not exists(select * from sys.columns where name = 'Sequence' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ADD Sequence varchar(30)
-END
-
-
-if not exists(select * from sys.columns where name = 'Description' and object_id = (select object_id from sys.tables where name = 'QCNType'))
-BEGIN
-ALTER TABLE qcn.QCNType ADD Description varchar(100)
-END
-
-if not exists(select * from sys.columns where name = 'Description' and object_id = (select object_id from sys.tables where name = 'QCNStatus'))
-BEGIN
-ALTER TABLE qcn.QCNStatus ADD Description varchar(100)
-END
-
-if not exists(select * from sys.columns where name = 'QCNCID' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ALTER COLUMN RequesterUserID varchar(65)
-END
-
-if not exists(select * from sys.columns where name = 'QCNCID' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ADD QCNCID int
-END
-
-if not exists(select * from sys.columns where name = 'FacilityID' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ADD FacilityID int
-END
-
-
-if not exists(select * from sys.columns where name = 'DateRequested' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ADD DateRequested datetime
-END
-
-
-if not exists(select * from sys.columns where name = 'Par' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ADD Par int
-END
-
-
-if not exists(select * from sys.columns where name = 'UOM' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ADD [UOM] varchar(10);
-END
-
-
-if not exists(select * from sys.columns where name = 'ApprovedBy' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ADD [ApprovedBy] varchar(65);
-END
-
-
-if not exists(select * from sys.columns where name = 'LoggedUserID' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ADD [LoggedUserID] int;
-END
-
-
-if not exists(select * from sys.columns where name = 'ManuNumName' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ADD [ManuNumName] varchar(60);
-END
-
-
-if not exists(select * from sys.columns where name = 'ClinicalDescription' and object_id = (select object_id from sys.tables where name = 'QCN'))
-BEGIN
-ALTER TABLE qcn.QCN ADD [ClinicalDescription] varchar(255);
-END
-
-
-if not exists(select * from sys.columns where name = 'AssignToQCN' and object_id = (select object_id from sys.tables where name = 'BlueBinUser'))
-BEGIN
-ALTER TABLE bluebin.BlueBinUser ADD [AssignToQCN] int;
-END
-
-
-
---updating existing values  select * from qcn.QCN
-update qcn.QCN set QCNCID = 2
-
-if not exists(select * from sys.columns where name = 'ACTIVE_STATUS' and object_id = (select object_id from sys.tables where name = 'DimLocation'))
-BEGIN
-ALTER TABLE bluebin.DimLocation ADD ACTIVE_STATUS char(1)
-END
-update qcn.QCN set FacilityID = a.LocationFacility from (select distinct LocationID as L, LocationFacility from bluebin.DimLocation where BlueBinFlag = 1 and ACTIVE_STATUS = 'A') a where LocationID = a.L
-update qcn.QCN set DateRequested = DateEntered
-update qcn.QCN set UOM = 'EA'
-update qcn.QCN set RequesterUserID = a.Name from (select BlueBinResourceID,LastName + ', ' + FirstName as Name from bluebin.BlueBinResource) a where RequesterUserID = a.BlueBinResourceID
-update qcn.QCN set LoggedUserID = 1
-update qcn.QCN set ClinicalDescription = a.ItemD from (select ItemID as I,ItemDescription as ItemD from bluebin.DimItem) a where ItemID = a.I
-update bluebin.BlueBinUser set AssignToQCN = 0
-update bluebin.BlueBinUser set AssignToQCN = 1 where RoleID in (select RoleID from bluebin.BlueBinRoles where RoleName like '%BlueBelt%')
-update qcn.QCN set Par = a.P from (select ItemID as I,LocationID as L, BinQty as P from bluebin.DimBin) a where ItemID = a.I and LocationID = a.L
-update qcn.QCN set UOM = a.U from (select ItemID as I,LocationID as L, BinUOM as U from bluebin.DimBin) a where ItemID = a.I and LocationID = a.L
-update qcn.QCN set AssignedUserID = z.ID from 
-(select q.QCNID as Q,a.BlueBinUserID as ID,b.LastName as L,b.FirstName as F 
-		from qcn.QCN q
-			inner join bluebin.BlueBinResource b on q.AssignedUserID = b.BlueBinResourceID
-			left join bluebin.BlueBinUser a on b.FirstName = a.FirstName and b.LastName = a.LastName) z where QCNID = z.Q
-update qcn.QCN set AssignedUserID = NULL where AssignedUserID = 0
---Update QCN Types
---select * from qcn.QCNType
-if not exists(select * from qcn.QCNType where Name = 'REMOVE')
-BEGIN
-insert into qcn.QCNType select 'REMOVE','1',getdate(),''
-END
-if not exists(select * from qcn.QCNType where Name = 'MODIFY')
-BEGIN
-insert into qcn.QCNType select 'MODIFY','1',getdate(),''
-END
-update qcn.QCN set QCNTypeID = (Select QCNTypeID from qcn.QCNType where Name = 'MODIFY') where QCNTypeID in (Select QCNTypeID from qcn.QCNType where Name in('CHANGE','UPDATE'))
-update qcn.QCN set QCNTypeID = (Select QCNTypeID from qcn.QCNType where Name = 'REMOVE') where QCNTypeID in (Select QCNTypeID from qcn.QCNType where Name in('DELETE'))
-delete from qcn.QCNType where Name in ('CHANGE','UPDATE','DELETE')
-
---Update QCN Statuses
---select * from qcn.QCNStatus
-insert into qcn.QCNStatus (Status,Active,LastUpdated,Description) VALUES
-('NeedsMoreInfo','1',getdate(),'Requester/clinical/other clarification.'),
-('AwaitingApproval','1',getdate(),'New items only, e.g. Value Analysis, Product Standards, or other new product committee process.'),
-('InFileMaintenance','1',getdate(),'New ERP # or other item activation steps.')
-
-update qcn.QCNStatus set LastUpdated = getdate(),Description = 'QCN is rejected.  This will remove the record off the Live board.' where Status = 'Rejected'
-update qcn.QCNStatus set LastUpdated = getdate(),Description = 'QCN is done.  This will remove the record off the Live board.' where Status = 'Completed'
-update qcn.QCNStatus set LastUpdated = getdate(),Status = 'New/NotStarted', Description = 'Logged, not yet evaluated for next steps.' where Status = 'New'
-update qcn.QCNStatus set LastUpdated = getdate(),Status = 'InProgress/Approved', Description = 'No additional support needed, QCN will be completed within 10 working days.' where Status = 'InProgress'
-
-update qcn.QCN set LastUpdated = getdate(),QCNStatusID = (Select QCNStatusID from qcn.QCNStatus where Status = 'NeedsMoreInfo') where QCNStatusID in (Select QCNStatusID from qcn.QCNStatus where Status in('OnHold','FutureVersion','InReview'))
-update qcn.QCN set DateCompleted = LastUpdated where QCNStatusID = (Select QCNStatusID from qcn.QCNStatus where Status = 'Completed') and DateCompleted is null
-delete from qcn.QCNStatus where Status in ('OnHold','FutureVersion','InReview')
-
-
---setting new columns not null
-ALTER TABLE qcn.QCN ALTER COLUMN QCNCID int not null
-ALTER TABLE qcn.QCN ALTER COLUMN FacilityID int not null
-ALTER TABLE qcn.QCN ALTER COLUMN DateRequested datetime not null
-ALTER TABLE qcn.QCN ALTER COLUMN LoggedUserID int not null
-ALTER TABLE bluebin.BlueBinUser ALTER COLUMN AssignToQCN int not null
-
-select * from qcn.QCN
-
-
-
---*******************************************************************************************************************************************
---*******************************************************************************************************************************************
---END MAJOR QCN CHANGE
---*******************************************************************************************************************************************
---*******************************************************************************************************************************************
-
-
-*/
-
---*******************************************************************************************************************************************
---*******************************************************************************************************************************************
-/*********************************************
- Adding New HuddleBoard Functionality for Multiple v2.3
-*********************************************/
---*******************************************************************************************************************************************
---*******************************************************************************************************************************************
-
---select * from bluebin.Config where ConfigName like '%Huddle%'
-if not exists (select * from bluebin.Config where ConfigName = 'MENU-Dashboard-HuddleBoard2')
-BEGIN
-insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,Description) VALUES
-
-('MENU-Dashboard-HuddleBoard2','0','1',getdate(),'DMS','HuddleBoard2 Functionality is available for this client. Default=0 (Boolean 0 is No, 1 is Yes)'),
-('MENU-Dashboard-HuddleBoard3','0','1',getdate(),'DMS','HuddleBoard3 Functionality is available for this client. Default=0 (Boolean 0 is No, 1 is Yes)'),
-('MENU-Dashboard-HuddleBoard4','0','1',getdate(),'DMS','HuddleBoard4 Functionality is available for this client. Default=0 (Boolean 0 is No, 1 is Yes)'),
-('MENU-Dashboard-HuddleBoard5','0','1',getdate(),'DMS','HuddleBoard5 Functionality is available for this client. Default=0 (Boolean 0 is No, 1 is Yes)'),
-
-('HuddleBoardTitle','Digital Huddle Board - Main','1',getdate(),'DMS','HuddleBoard Title to Show in the Page Title and Menu Dropdowns'),
-('HuddleBoard2Title','Digital Huddle Board - Second','1',getdate(),'DMS','HuddleBoard2 Title to Show in the Page Title and Menu Dropdowns'),
-('HuddleBoard3Title','Digital Huddle Board - Third','1',getdate(),'DMS','HuddleBoard3 Title to Show in the Page Title and Menu Dropdowns'),
-('HuddleBoard4Title','Digital Huddle Board - Fourth','1',getdate(),'DMS','HuddleBoard4 Title to Show in the Page Title and Menu Dropdowns'),
-('HuddleBoard5Title','Digital Huddle Board - Fifth','1',getdate(),'DMS','HuddleBoard5 Title to Show in the Page Title and Menu Dropdowns'),
-
-('HuddleBoardWorkbook','HB-'+(select DB_NAME()),'1',getdate(),'Tableau','Name of HuddleBoard workbook in Tableau'),
-('HuddleBoard2Workbook','HB2-'+(select DB_NAME()),'1',getdate(),'Tableau','Name of HuddleBoard2 workbook in Tableau'),
-('HuddleBoard3Workbook','HB3-'+(select DB_NAME()),'1',getdate(),'Tableau','Name of HuddleBoard3 workbook in Tableau'),
-('HuddleBoard4Workbook','HB4-'+(select DB_NAME()),'1',getdate(),'Tableau','Name of HuddleBoard4 workbook in Tableau'),
-('HuddleBoard5Workbook','HB5-'+(select DB_NAME()),'1',getdate(),'Tableau','Name of HuddleBoard5 workbook in Tableau')
-END
-
---select * from bluebin.BlueBinOperations
---select * from bluebin.BlueBinRoleOperations
-
-if not exists (select * from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard2')
-BEGIN
-insert into bluebin.BlueBinOperations (OpName,Description) VALUES
-('MENU-Dashboard-HuddleBoard2','Give User ability to see the Huddle Board2'),
-('MENU-Dashboard-HuddleBoard3','Give User ability to see the Huddle Board3'),
-('MENU-Dashboard-HuddleBoard4','Give User ability to see the Huddle Board4'),
-('MENU-Dashboard-HuddleBoard5','Give User ability to see the Huddle Board5')
-END
-
-if not exists (select * from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard2'))
-BEGIN
-insert into bluebin.BlueBinRoleOperations
-select RoleID,(select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard2')
-from bluebin.BlueBinRoles where RoleID in (select RoleID from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard'))
-END
-
-if not exists (select * from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard3'))
-BEGIN
-insert into bluebin.BlueBinRoleOperations
-select RoleID,(select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard3')
-from bluebin.BlueBinRoles where RoleID in (select RoleID from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard'))
-END
-
-if not exists (select * from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard4'))
-BEGIN
-insert into bluebin.BlueBinRoleOperations
-select RoleID,(select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard4')
-from bluebin.BlueBinRoles where RoleID in (select RoleID from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard'))
-END
-
-if not exists (select * from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard5'))
-BEGIN
-insert into bluebin.BlueBinRoleOperations
-select RoleID,(select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard5')
-from bluebin.BlueBinRoles where RoleID in (select RoleID from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName = 'MENU-Dashboard-HuddleBoard'))
-END
-
---*******************************************************************************************************************************************
---*******************************************************************************************************************************************
-/*********************************************
-END
-*********************************************/
---*******************************************************************************************************************************************
---*******************************************************************************************************************************************
-if not exists(select * from sys.columns where name = 'BinKey' and object_id = (select object_id from sys.tables where name = 'DimBinHistory'))
-BEGIN
-ALTER TABLE bluebin.DimBinHistory ADD BinKey int
-ALTER TABLE bluebin.DimBinHistory ADD [Sequence] varchar(7)
-ALTER TABLE bluebin.DimBinHistory ADD [BinUOM] varchar(4) 
-ALTER TABLE bluebin.DimBinHistory ADD [LastBinUOM] varchar(4)  
-ALTER TABLE bluebin.DimBinHistory ADD [Date] date
-ALTER TABLE bluebin.DimBinHistory ADD [LastSequence] varchar(7)
-ALTER TABLE bluebin.DimBinHistory ADD [LastBinQty] int
-ALTER TABLE bluebin.DimBinHistory DROP COLUMN LastUpdated
-;
-truncate table bluebin.DimBinHistory
-
-END
-
-
-if not exists(select * from sys.columns where name = 'Details' and object_id = (select object_id from sys.tables where name = 'ConesDeployed'))
-BEGIN
-ALTER TABLE bluebin.ConesDeployed ADD Details varchar (255)
-END
-GO
-if not exists(select * from sys.columns where name = 'SubProduct' and object_id = (select object_id from sys.tables where name = 'ConesDeployed'))
-BEGIN
-ALTER TABLE bluebin.ConesDeployed ADD SubProduct varchar (3)
-END
-GO
-if not exists(select * from sys.columns where name = 'ExpectedDelivery' and object_id = (select object_id from sys.tables where name = 'ConesDeployed'))
-BEGIN
-update bluebin.ConesDeployed set SubProduct = 'No'
-END
-GO
-if not exists(select * from sys.columns where name = 'ExpectedDelivery' and object_id = (select object_id from sys.tables where name = 'ConesDeployed'))
-BEGIN
-ALTER TABLE bluebin.ConesDeployed ADD ExpectedDelivery datetime
-END
-GO
-if exists(select * from sys.columns where name = 'SubProduct' and object_id = (select object_id from sys.tables where name = 'ConesDeployed'))
-BEGIN
-ALTER TABLE bluebin.ConesDeployed ALTER COLUMN SubProduct varchar (3) not null
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('MENU-PP-Observation','1','DMS',1,getdate(),'Productivity Planner Module Observations Sub Module is viewable.')
 END
 GO
 
-if not exists(select * from sys.columns where name = 'Bin' and object_id = (select object_id from sys.tables where name = 'ScanLine'))
+if not exists(select * from bluebin.Config where ConfigName like 'MENU-PP-ServiceTimes')  
 BEGIN
-ALTER TABLE scan.ScanLine ADD Bin varchar (2)
-END
-GO
-if not exists(select * from sys.columns where name = 'ScanType' and object_id = (select object_id from sys.tables where name = 'ScanBatch'))
-BEGIN
-ALTER TABLE scan.ScanBatch ADD ScanType varchar (25)
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('MENU-PP-ServiceTimes','1','DMS',1,getdate(),'Productivity Planner Module Service Times Sub Module is viewable.')
 END
 GO
 
-if exists(select * from scan.ScanBatch where ScanType is null)
+if not exists(select * from bluebin.Config where ConfigName like 'MENU-PP-StockOutP')  
 BEGIN
-update scan.ScanBatch set ScanType = 'Order'
-END
-GO
-
-if exists(select * from sys.columns where name = 'ScanType' and object_id = (select object_id from sys.tables where name = 'ScanBatch'))
-BEGIN
-ALTER TABLE scan.ScanBatch ALTER COLUMN ScanType varchar (25) NOT NULL
-END
-GO
-
-if not exists(select * from sys.columns where name = 'GembaTier' and object_id = (select object_id from sys.tables where name = 'BlueBinUser'))
-BEGIN
-ALTER TABLE bluebin.BlueBinUser ADD [GembaTier] varchar(50);
-END
-GO
-
-if not exists(select * from sys.columns where name = 'ERPUser' and object_id = (select object_id from sys.tables where name = 'BlueBinUser'))
-BEGIN
-ALTER TABLE bluebin.BlueBinUser ADD [ERPUser] varchar(60);
-END
-GO
-
-if not exists(select * from sys.columns where name = 'Description' and object_id = (select object_id from sys.tables where name = 'BlueBinOperations'))
-BEGIN
-ALTER TABLE bluebin.BlueBinOperations ADD [Description] varchar(255);
-END
-GO
-
-if not exists(select * from sys.columns where name = 'Title' and object_id = (select object_id from sys.tables where name = 'BlueBinUser'))
-BEGIN
-ALTER TABLE bluebin.BlueBinUser ADD [Title] varchar(50);
-END
-GO
-
-if not exists (select * from bluebin.TrainingModule where ModuleName like '%Belt%')
-BEGIN
-insert into bluebin.TrainingModule (ModuleName,ModuleDescription,Active,Required,LastUpdated) VALUES
-('Green Belt Certification','Green Belt Certification',1,0,getdate()),
-('Blue Belt Certification','Blue Belt Certification',1,0,getdate()),
-('Black Belt Certification','Black Belt Certification',1,0,getdate())
-END
-
-
-if exists (select * from bluebin.BlueBinOperations where [Description] is null)
-BEGIN
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Admin Menu' where OpName = 'ADMIN-MENU'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Sub Admin Menu Config' where OpName = 'ADMIN-CONFIG'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Sub Admin Menu Users' where OpName = 'ADMIN-USERS'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Sub Admin Menu Resources' where OpName = 'ADMIN-RESOURCES'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Sub Admin Menu Training' where OpName = 'ADMIN-TRAINING'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Sub Admin Menu Test' where OpName = 'ADMIN-TEST'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Dashboard Menu' where OpName = 'MENU-Dashboard'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the QCN Menu' where OpName = 'MENU-QCN'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Gemba Menu' where OpName = 'MENU-Gemba'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Hardware Menu' where OpName = 'MENU-Hardware'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Scanning Menu' where OpName = 'MENU-Scanning'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Other Menu' where OpName = 'MENU-Other'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Supply Chain DB' where OpName = 'MENU-Dashboard-SupplyChain'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Sourcing DB' where OpName = 'MENU-Dashboard-Sourcing'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Op Performance DB' where OpName = 'MENU-Dashboard-Ops'
-Update bluebin.BlueBinOperations set Description = 'Give User ability to see the Huddle Board' where OpName = 'MENU-Dashboard-HuddleBoard'
-END
-GO
-
-if not exists(select * from bluebin.BlueBinOperations where OpName ='DOCUMENTS-UploadUtility')  
-BEGIN
-Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
-('DOCUMENTS-UploadUtility','Give User ability to see Upload Utility and Upload/Update Documents in Op Procedures')
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('MENU-PP-StockOutP','1','DMS',1,getdate(),'Productivity Planner Module Observations Sub Module is viewable.')
 END
 GO
 
 
-if not exists(select * from bluebin.BlueBinOperations where OpName like 'ADMIN%')  
-BEGIN
-Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
-('ADMIN-MENU','Give User ability to see the Main Admin Menu'),
-('ADMIN-CONFIG','Give User ability to see the Sub Admin Menu Config'),
-('ADMIN-USERS','Give User ability to see the Sub Admin Menu User Administration'),
-('ADMIN-RESOURCES','Give User ability to see the Sub Admin Menu Resources'),
-('ADMIN-TRAINING','Give User ability to see the Sub Admin Menu Training'),
-('ADMIN-PARMASTER','Give User ability to see Custom BlueBin Par Master'),
-('ADMIN-PARMASTER-EDIT','Give User ability to see Custom BlueBin Par Master and to Edit it.')
-END
-GO
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
 
-
-
-if not exists(select * from bluebin.Config where ConfigName = 'FriendlySiteName')
-BEGIN
-insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,Description)
-select 'FriendlySiteName',(select ConfigValue from bluebin.Config where ConfigName = 'SiteAppURL'),1,getdate(),'DMS','Friendly Name that displays in the Home splash screen to welcome a new user'
-END
-GO
-
-
-if not exists(select * from bluebin.BlueBinOperations where OpName = 'ADMIN-PARMASTER-EDIT')  
-BEGIN
-Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
-('ADMIN-PARMASTER-EDIT','Give User ability to see Custom BlueBin Par Master and to Edit it.')
-
-END
-GO
-
-if not exists(select * from bluebin.BlueBinOperations where OpName = 'ADMIN-PARMASTER')  
-BEGIN
-Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
-('ADMIN-PARMASTER','Give User ability to see Custom BlueBin Par Master')
-
-END
-GO
-
-if not exists (select * from bluebin.BlueBinOperations where [OpName] like 'MENU%')
-BEGIN
-insert into bluebin.BlueBinOperations select 'MENU-Cones-EDIT','Give User ability to check out and in Cones'
-insert into bluebin.BlueBinOperations select 'MENU-Cones','Give User ability to see the Cones Module'
-insert into bluebin.BlueBinOperations select 'MENU-Dashboard','Give User ability to see the Dashboard Menu'
-insert into bluebin.BlueBinOperations select 'MENU-QCN','Give User ability to see the QCN Menu'
-insert into bluebin.BlueBinOperations select 'MENU-Gemba','Give User ability to see the Gemba Menu'
-insert into bluebin.BlueBinOperations select 'MENU-Hardware','Give User ability to see the Hardware Menu'
-insert into bluebin.BlueBinOperations select 'MENU-Scanning','Give User ability to see the Scanning Menu'
-insert into bluebin.BlueBinOperations select 'MENU-Other','Give User ability to see the Other Menu'
-insert into bluebin.BlueBinOperations select 'MENU-Dashboard-SupplyChain','Give User ability to see the Supply Chain DB'
-insert into bluebin.BlueBinOperations select 'MENU-Dashboard-Sourcing','Give User ability to see the Sourcing DB'
-insert into bluebin.BlueBinOperations select 'MENU-Dashboard-Ops','Give User ability to see the Op Performance DB'
-insert into bluebin.BlueBinOperations select 'MENU-Dashboard-HuddleBoard','Give User ability to see the Huddle Board'
-
-insert into bluebin.BlueBinRoleOperations 
-select sr.RoleID,so.OpID
-from bluebin.BlueBinRoles sr,bluebin.BlueBinOperations so
-where so.OpName like 'MENU%' and so.OpID not in (select OpID from bluebin.BlueBinRoleOperations)
-
-END 
-GO
-
-if not exists(select * from sys.columns where name = 'SKUS' and object_id = (select object_id from sys.tables where name = 'FactWHHistory'))
-BEGIN
-ALTER TABLE bluebin.FactWHHistory ADD [SKUS] int;
-END
-GO
-
---*******************
 --Config Stuff
 
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+/*Time Study */
+if not exists(select * from etl.JobSteps where StepName = 'FactActivityTimes')  
+BEGIN
+insert into etl.JobSteps (StepNumber,StepName,StepProcedure,StepTable,ActiveFlag,LastModifiedDate) VALUES ((select max(StepNumber) +1 from etl.JobSteps),'FactActivityTimes','etl_FactActivityTimes','bluebin.FactActivityTimes','0',getdate())
+END
+GO
+
+if not exists(select * from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy')  
+BEGIN
+Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
+('MENU-TimeStudy','Give User ability to see Time Study Module and Subs Modules in Ops')
+END
+GO
+
+if not exists(select * from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy-EDIT')  
+BEGIN
+Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
+('MENU-TimeStudy-EDIT','Give User ability to see Time Study Module and Subs Modules in Ops and Edit')
+END
+GO
+
+if not exists (select * from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName like 'MENU-TimeStudy%'))
+BEGIN  
+insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy') from bluebin.BlueBinRoles where RoleName like 'BlueBin%'
+insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy-EDIT') from bluebin.BlueBinRoles where RoleName like 'BlueBin%'
+END
+
+if not exists(select * from bluebin.Config where ConfigName = 'MENU-TimeStudy')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'MENU-TimeStudy','0',1,getdate(),'DMS','Time Study Modules are available for this client. Default=0 (Boolean 0 is No, 1 is Yes)'
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-Activity%')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
+('OP-Activity Times','0',1,getdate(),'Reports','Setting for whether to display the Time Study Activity Times'),
+('OP-Activity Averages','0',1,getdate(),'Reports','Setting for whether to display the Time Study Averages for Nodes'),
+('OP-Activity Planner','0',1,getdate(),'Reports','Setting for whether to display the Time Study Overview Dashboard (Detail)')
+END
+
+
+if not exists(select * from bluebin.Config where ConfigName like 'Double Bin StockOut')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Double Bin StockOut','Write down Item numbers and sweep Stage','TimeStudy',1,getdate(),'Write down Item numbers and sweep Stage')
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Double Bin StockOut','Key out MSR','TimeStudy',1,getdate(),'Key out MSR')
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Double Bin StockOut','Pick Items','TimeStudy',1,getdate(),'Pick Items')
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Double Bin StockOut','Deliver Items','TimeStudy',1,getdate(),'Deliver Items')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName like 'Node Service')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Node Service','Leave Stage to enter node','TimeStudy',1,getdate(),'Leave Stage to enter node')
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Node Service','Node service time','TimeStudy',1,getdate(),'Node service time')
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Node Service','Returns bin time','TimeStudy',1,getdate(),'Returns bin time')
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Node Service','Travel time to next node','TimeStudy',1,getdate(),'Travel time to next node')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName like 'Stat Calls')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Stat Calls','Travel to WH','TimeStudy',1,getdate(),'Travel to WH')
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Stat Calls','Pick Product','TimeStudy',1,getdate(),'Pick Product')
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Stat Calls','Paperwork','TimeStudy',1,getdate(),'Paperwork')
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Stat Calls','Deliver Product','TimeStudy',1,getdate(),'Deliver Product')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName like 'Returns Bin Large')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Returns Bins Large','2.30','TimeStudy',1,getdate(),'Average Time to Returns Bin Large based on Returns Bins Threshold (Greater)')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName like 'Returns Bin Small')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Returns Bins Small','1.86','TimeStudy',1,getdate(),'Average Time to Returns Bin Small based on Returns Bins Threshold (Less)')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName like 'Returns Bin Threshhold')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Returns Bins Threshhold','8','TimeStudy',1,getdate(),'Threshhold for Returns Bins to go Large (GT) or Small (LT EQ)')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName = 'Efficiency Factor')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'Efficiency Factor','.75','1',getdate(),'TimeStudy','Set Productivity Planner Efficiency Factor for FTE Equivalent calculations. Default-.75'
+END
+GO
+
 /* PEOPLESOFT CONFIGS*/
+if not exists(select * from bluebin.Config where ConfigName = 'ClientERP')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'ClientERP','Lawson',1,getdate(),'DMS','Client ERP System.  Used to avoid running the wrong upgrade script'
+END
+GO
+
 if not exists(select * from bluebin.Config where ConfigName = 'PS_DefaultFacility')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
@@ -562,6 +249,43 @@ END
 GO
 
 /*  */
+
+
+if not exists(select * from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy')  
+BEGIN
+Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
+('MENU-TimeStudy','Give User ability to see Time Study Module and Subs Modules in Ops')
+END
+GO
+
+if not exists(select * from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy-EDIT')  
+BEGIN
+Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
+('MENU-TimeStudy-EDIT','Give User ability to see Time Study Module and Subs Modules in Ops and Edit')
+END
+GO
+
+if not exists (select * from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName like 'MENU-TimeStudy%'))
+BEGIN  
+insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy') from bluebin.BlueBinRoles where RoleName like 'BlueBin%'
+insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy-EDIT') from bluebin.BlueBinRoles where RoleName like 'BlueBin%'
+END
+
+if not exists(select * from bluebin.Config where ConfigName = 'MENU-TimeStudy')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'MENU-TimeStudy','0',1,getdate(),'DMS','Time Study Modules are available for this client. Default=0 (Boolean 0 is No, 1 is Yes)'
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-Activity%')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
+('OP-Activity Times','0',1,getdate(),'Reports','Setting for whether to display the Time Study Activity Times'),
+('OP-Activity Averages','0',1,getdate(),'Reports','Setting for whether to display the Time Study Averages for Nodes'),
+('OP-Activity Planner','0',1,getdate(),'Reports','Setting for whether to display the Time Study Overview Dashboard (Detail)')
+END
+
 
 if exists(select * from scan.ScanBatch where ScanType = 'Order')  
 BEGIN
@@ -623,6 +347,9 @@ END
 if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-%')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
+('OP-Activity Times','0',1,getdate(),'Reports','Setting for whether to display the Time Study Activity Times'),
+('OP-Activity Averages','0',1,getdate(),'Reports','Setting for whether to display the Time Study Averages for Nodes'),
+('OP-Activity Planner','0',1,getdate(),'Reports','Setting for whether to display the Time Study Overview Dashboard (Detail)'),
 ('OP-Warehouse History','0',1,getdate(),'Reports','Setting for whether to display the WH History Report'),
 ('OP-Item Usage','0',1,getdate(),'Reports','Setting for whether to display the Item Usage Report'),
 ('OP-Pick Line Volume','1',1,getdate(),'Reports','Setting for whether to display the Pick Line Volume Report'),
@@ -812,9 +539,162 @@ GO
 
 
 Print 'Table Updates Complete'
---*************************************************************************************************************************************************
+
+
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
 --Table Adds
---*************************************************************************************************************************************************
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
+--*****************************************************
+--**************************NEWTABLE**********************
+/****** Object:  Table [bluebin].[TimeStudyStageScan]     ******/
+
+if not exists (select * from sys.tables where name = 'TimeStudyStageScan')
+BEGIN
+CREATE TABLE [bluebin].[TimeStudyStageScan](
+	[TimeStudyStageScanID] INT NOT NULL IDENTITY(1,1)  PRIMARY KEY,
+	[Date] datetime NOT NULL,
+	[FacilityID] int NOT NULL,
+	[LocationID] varchar(10) NOT NULL,
+	[StartTime] DateTime NOT NULL,
+	[StopTime] Datetime NOT NULL,
+	[SKUS] int NOT NULL,
+	[Comments] varchar(max) NULL,
+	[BlueBinUserID] int NOT NULL,
+	[BlueBinResourceID] int NULL,
+	[MostRecent] int NOT NULL,
+	[Active] int NOT NULL,
+	[LastUpdated] datetime NOT NULL
+	
+)
+END
+GO
+
+--*****************************************************
+--**************************NEWTABLE**********************
+
+/****** Object:  Table [bluebin].[TimeStudyBinFill]     ******/
+if not exists (select * from sys.tables where name = 'TimeStudyBinFill')
+BEGIN
+CREATE TABLE [bluebin].[TimeStudyBinFill](
+	[TimeStudyBinFillID] INT NOT NULL IDENTITY(1,1)  PRIMARY KEY,
+	[Date] datetime NOT NULL,
+	[FacilityID] int NOT NULL,
+	[LocationID] varchar(10) NOT NULL,
+	[StartTime] DateTime NOT NULL,
+	[StopTime] Datetime NOT NULL,
+	[SKUS] int NOT NULL,
+	[Comments] varchar(max) NULL,
+	[BlueBinUserID] int NOT NULL,
+	[BlueBinResourceID] int NULL,
+	[MostRecent] int NOT NULL,
+	[Active] int NOT NULL,
+	[LastUpdated] datetime NOT NULL
+)
+
+
+END
+GO
+
+--*****************************************************
+--**************************NEWTABLE**********************
+
+/****** Object:  Table [bluebin].[TimeStudyStockOut]     ******/
+if not exists (select * from sys.tables where name = 'TimeStudyStockOut')
+BEGIN
+CREATE TABLE [bluebin].[TimeStudyStockOut](
+	[TimeStudyStockOutID] INT NOT NULL IDENTITY(1,1)  PRIMARY KEY,
+	[Date] datetime NOT NULL,
+	[FacilityID] int NOT NULL,
+	[LocationID] varchar(10) NULL,	
+	[TimeStudyProcessID] int NOT NULL,
+	[StartTime] DateTime NOT NULL,
+	[StopTime] Datetime NOT NULL,
+	[SKUS] int NOT NULL,
+	[Comments] varchar(max) NULL,
+	[BlueBinUserID] int NOT NULL,
+	[BlueBinResourceID] int NULL,
+	[MostRecent] int NOT NULL,
+	[Active] int NOT NULL,
+    [LastUpdated] datetime NOT NULL
+)
+
+
+END
+GO
+
+--*****************************************************
+--**************************NEWTABLE**********************
+
+/****** Object:  Table [bluebin].[TimeStudyNodeService]     ******/
+if not exists (select * from sys.tables where name = 'TimeStudyNodeService')
+BEGIN
+CREATE TABLE [bluebin].[TimeStudyNodeService](
+	[TimeStudyNodeServiceID] INT NOT NULL IDENTITY(1,1)  PRIMARY KEY,
+	[Date] datetime NOT NULL,
+	[FacilityID] int NOT NULL,
+	[LocationID] varchar(10) NOT NULL,
+	[TravelLocationID] varchar(10) NOT NULL,
+	[TimeStudyProcessID] int NOT NULL,
+	[StartTime] DateTime NOT NULL,
+	[StopTime] Datetime NOT NULL,
+	[SKUS] int NOT NULL,
+	[Comments] varchar(max) NULL,
+	[BlueBinUserID] int NOT NULL,
+	[BlueBinResourceID] int NULL,
+	[MostRecent] int NOT NULL,
+	[Active] int NOT NULL,
+	[LastUpdated] datetime NOT NULL
+)
+
+
+END
+GO
+
+--*****************************************************
+--**************************NEWTABLE**********************
+
+--/****** Object:  Table [bluebin].[TimeStudyProcess]     ******/
+--if not exists (select * from sys.tables where name = 'TimeStudyProcess')
+--BEGIN
+--CREATE TABLE [bluebin].[TimeStudyProcess](
+--	[TimeStudyProcessID] INT NOT NULL IDENTITY(1,1)  PRIMARY KEY,
+--	[ProcessType] varchar (100) NOT NULL,
+--	[ProcessName] varchar (100) NOT NULL,
+--	[ProcessValue] varchar (100) NULL,
+--	[Description] varchar(255) NULL,
+--	[Active] int NOT NULL,
+--	[LastUpdated] datetime NOT NULL
+--)
+
+
+--END
+--GO
+--*****************************************************
+--**************************NEWTABLE**********************
+
+/****** Object:  Table [bluebin].[TimeStudyGroup]     ******/
+if not exists (select * from sys.tables where name = 'TimeStudyGroup')
+BEGIN
+CREATE TABLE [bluebin].[TimeStudyGroup](
+[TimeStudyGroupID] INT NOT NULL IDENTITY(1,1)  PRIMARY KEY,
+	[FacilityID] int NOT NULL,
+	[LocationID] varchar(10) NOT NULL,
+	[GroupName] varchar(50) NOT NULL,
+	[Description] varchar(255) NULL,
+	[Active] int NOT NULL,
+	[LastUpdated] datetime NOT NULL
+)
+
+
+END
+GO
+
 
 --*****************************************************
 --**************************NEWTABLE**********************
@@ -1600,9 +1480,19 @@ SET ANSI_PADDING OFF
 GO
 
 Print 'Table Adds Complete'
---*************************************************************************************************************************************************
---Sproc Updates
---*************************************************************************************************************************************************
+
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
+--Sprocs
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
+
+
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -3377,7 +3267,7 @@ ClinicalDescription = @ClinicalDescription,
 [Sequence] = @Sequence,
 [RequesterUserID] = @Requester,
 ApprovedBy = @ApprovedBy,
-[AssignedUserID] = @Assigned,
+[AssignedUserID] = case when @Assigned not in (select BlueBinUserID from bluebin.BlueBinUser) then NULL else @Assigned end,
 [QCNCID] =  @QCNComplexity,
 [QCNTypeID] = (select max([QCNTypeID]) from [qcn].[QCNType] where [Name] = @QCNType),
 [Details] = @Details,
@@ -3400,6 +3290,8 @@ END
 GO
 grant exec on sp_EditQCN to appusers
 GO
+
+
 
 --*****************************************************
 --**************************SPROC**********************
@@ -3937,6 +3829,7 @@ AS
 BEGIN
 SET NOCOUNT ON
 	SELECT 
+		BlueBinResourceID,
 		LastName + ', ' + FirstName + ' (' + Login + ')' as FullName 
 	
 	FROM [bluebin].[BlueBinResource] 
@@ -3965,19 +3858,62 @@ CREATE PROCEDURE sp_SelectLocation
 AS
 BEGIN
 SET NOCOUNT ON
+
 SELECT 
+LocationFacility as FacilityID,
 LocationID,
 --LocationName,
 case when LocationID = LocationName then LocationID else LocationID + ' - ' + [LocationName] end as LocationName 
-
 FROM [bluebin].[DimLocation] where BlueBinFlag = 1
+
 order by LocationID
 END
 GO
 grant exec on sp_SelectLocation to appusers
 GO
 
+--*****************************************************
+--**************************SPROC**********************
 
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectLocationCascade') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectLocationCascade
+GO
+
+--exec sp_SelectLocationCascade 'Yes'
+
+CREATE PROCEDURE sp_SelectLocationCascade
+@Multiple varchar(3)
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+declare @MultipleID varchar(10), @MultipleName varchar(10)
+select @MultipleID = case when @Multiple = 'Yes' then 'Multiple' else '' end
+select @MultipleName = case when @Multiple = 'Yes' then 'Multiple' else '--Select--' end
+
+
+Select distinct 
+FacilityID,
+LocationID,
+LocationName
+from (
+SELECT 
+LocationFacility as FacilityID,
+LocationID,
+--LocationName,
+case when LocationID = LocationName then LocationID else LocationID + ' - ' + [LocationName] end as LocationName 
+
+FROM [bluebin].[DimLocation] where BlueBinFlag = 1
+UNION ALL 
+select distinct LocationFacility as FacilityID,'','--Select--' FROM [bluebin].[DimLocation] where BlueBinFlag = 1
+UNION ALL 
+select distinct LocationFacility as FacilityID,@MultipleID,@MultipleName FROM [bluebin].[DimLocation] where BlueBinFlag = 1) as a
+order by LocationID
+END
+GO
+grant exec on sp_SelectLocationCascade to appusers
+GO
 
 --*****************************************************
 --**************************SPROC**********************
@@ -4057,15 +3993,14 @@ GO
 
 --*****************************************************
 --**************************SPROC**********************
-
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectQCNComplexity') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectQCNComplexity
 GO
 
---exec sp_SelectQCNComplexity 
+--exec sp_SelectQCNComplexity ''
 
 CREATE PROCEDURE sp_SelectQCNComplexity
-
+@Active varchar(1)
 --WITH ENCRYPTION
 AS
 BEGIN
@@ -4073,6 +4008,7 @@ SET NOCOUNT ON
 	SELECT 
 	QCNCID,
 	Name,
+	[Name]+' - ' + Description as QCNComplexity,
 	Description,
 	case 
 		when Active = 1 then 'Yes' 
@@ -4082,7 +4018,7 @@ SET NOCOUNT ON
 	LastUpdated 
 	
 	FROM qcn.[QCNComplexity]
-
+	where Active like '%' + @Active + '%'
 END
 GO
 grant exec on sp_SelectQCNComplexity to appusers
@@ -4177,13 +4113,15 @@ GO
 
 --*****************************************************
 --**************************SPROC**********************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectQCNStatus') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectQCNStatus
 GO
 
---exec sp_SelectQCNStatus 
+--exec sp_SelectQCNStatus '1'
 
 CREATE PROCEDURE sp_SelectQCNStatus
+@Active varchar(1)
 
 --WITH ENCRYPTION
 AS
@@ -4201,6 +4139,7 @@ SET NOCOUNT ON
 		LastUpdated 
 		
 	FROM qcn.[QCNStatus]
+	where Active like '%' + @Active + '%'
 	order by Status
 
 END
@@ -4214,10 +4153,10 @@ if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectQCNType'
 drop procedure sp_SelectQCNType
 GO
 
---exec sp_SelectQCNType 
+--exec sp_SelectQCNType ''
 
 CREATE PROCEDURE sp_SelectQCNType
-
+@Active varchar(1)
 --WITH ENCRYPTION
 AS
 BEGIN
@@ -4234,7 +4173,7 @@ SET NOCOUNT ON
 	LastUpdated 
 	
 	FROM qcn.[QCNType]
-
+	where Active like '%' + @Active + '%'
 END
 GO
 grant exec on sp_SelectQCNType to appusers
@@ -5534,136 +5473,6 @@ END
 GO
 grant exec on sp_SelectFacilities to public
 GO
---*****************************************************
---**************************SPROC**********************
-
-/*
-Script to create default BlueBin Users with or without generic random passwords.
-If Generic Passwords is set to 'Yes' then all users have the Password Pa55w0rd! otherwise it will be a random password
-select * from bluebin.BlueBinUser
-select * from bluebin.BlueBinResource
-delete from bluebin.BlueBinUser
-delete from bluebin.BlueBinResource
-exec sp_InsertBlueBinUser 'Yes'
-*/
-
-if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertBlueBinUser') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure sp_InsertBlueBinUser
-GO
-
-CREATE PROCEDURE [dbo].[sp_InsertBlueBinUser]
-      @UseGeneric varchar(3)
-
-AS
-BEGIN
-
-DECLARE @UserTable TABLE (iid int identity (1,1) PRIMARY KEY,BlueBinUserID_id int, UserLogin varchar(255),LastName varchar(30),FirstName varchar(30),Email varchar(60),RoleName varchar (20), [Password] varchar(50),Created int);
-DECLARE @length int = 8, @p varchar(50)
-declare @iid int,@UserLogin varchar(255),@LastName varchar(30),@FirstName varchar(30),@Email varchar(60), @Password varbinary(max), @RoleID int, @RoleName varchar(20)
-
-
-
-
-
-/*Users to Create.  List all users here*/
---**********************************************
-insert @UserTable (BlueBinUserID_id, UserLogin,LastName,FirstName,Email, RoleName,[Password],Created) VALUES
-
-(0,'gbutler@bluebin.com','Butler','Gerry','gbutler@bluebin.com','BlueBinPersonnel','',0),
-(0,'dhagan@bluebin.com','Hagan','Derek','dhagan@bluebin.com','BlueBinPersonnel','',0),
-(0,'snevins@bluebin.com','Nevins','Sabrina','snevins@bluebin.com','BlueBinPersonnel','',0),
-(0,'chodge@bluebin.com','Hodge','Charles','chodge@bluebin.com','BlueBinPersonnel','',0),
-(0,'rswan@bluebin.com','Swan','Robb','rswan@bluebin.com','BlueBinPersonnel','',0),
-(0,'cpetschke@bluebin.com','Petschke','Carl','cpetschke@bluebin.com','BlueBinPersonnel','',0)
-
-
-/*Create generic passwords*/
---**********************************************
-select @iid = MIN(iid) from @usertable
-while @iid < (select MAX(iid)+ 1 from @usertable)
-begin
-	declare @table table (p varchar(50))
-	insert @table exec sp_GeneratePassword @length 
-	update @UserTable set [Password] = 
-		case	
-			when @UseGeneric = 'Yes' then 'Pa55w0rd!'
-			when @UseGeneric = 'No' then (select p from @table) 
-			else 'Error!'
-		end
-		where iid = @iid
-	delete from @table
-	set @iid = @iid +1
-END
-
-
-/*Create Users and send out an email*/
---**********************************************
-select @iid = MIN(iid) from @UserTable
-while @iid < (select MAX(iid)+ 1 from @UserTable)
-begin
-	if not exists (select * from bluebin.BlueBinUser where LOWER(UserLogin) in (select LOWER(UserLogin) from @UserTable where iid = @iid))
-	BEGIN	
-	select @Password =  convert(varbinary(max),rtrim([Password])) from @UserTable where iid = @iid
-	select @RoleID =  RoleID from bluebin.BlueBinRoles where RoleName = (select RoleName from @UserTable where iid = @iid)
-		
-	Insert Into bluebin.BlueBinUser (UserLogin,FirstName,LastName,MiddleName,Active,LastUpdated,RoleID,LastLoginDate,MustChangePassword,PasswordExpires,[Password],Email)
-	Select LOWER(@UserLogin),FirstName,LastName,'',1,getdate(),@RoleID,getdate()-1,1,'90',HASHBYTES('SHA1',@Password),Email from @UserTable where iid = @iid
-	update @UserTable set Created = 1 where iid = @iid
---exec sp_sacc_epoint_set_pwd @@IDENTITY,@PWD,@hosp
-
-/*Email with info*/
---**********************************************
-/*
-			if @email_yn = 'Yes'
-			Begin
-			select @subject = (select 'New Production Site Login')
-			set @message = 'New Production site now available for ' + @newsite1 + ' at ' + @newsite2 + '. You have 5 days to reset your password before being locked out. Your credentials are below.' ;
-			set @message = @message + CHAR (13);
-			set @message = @message + CHAR (13);
-			set @message = @message +  'UID: ' + @user_login ;
-			set @message = @message + CHAR (13);
-			set @message = @message +  'PWD: ' + @PWD + '  (you will be prompted to change)';
-			set @message = @message + CHAR (13);
-			set @message = @message + CHAR (13);
-			set @message = @message + 'If you have any problems, please contact the TPA ('+@TPA+') on this project.'
-
-
-			exec sp_sendmail  
-			 @varProfile='Support'
-			, @varTo = @email
-			, @varSubject = @subject
-			, @varMessage = @message
-			end
---**********************************************
-*/
-	END
-
-	set @FirstName = (select FirstName from @UserTable where iid = @iid)
-	set @LastName = (select LastName from @UserTable where iid = @iid)
-	set @UserLogin = (select LOWER(@UserLogin) from @UserTable where iid = @iid)
-	set @Email = (select Email from @UserTable where iid = @iid)
-	set @RoleName = (select RoleName from @UserTable where iid = @iid)
-
-	if not exists (select BlueBinResourceID from bluebin.BlueBinResource where FirstName = @FirstName and LastName = @LastName)--select * from bluebin.BlueBinResource
-	BEGIN
-		exec sp_InsertBlueBinResource 
-		@FirstName,
-		@LastName,
-		'',
-		@UserLogin,
-		@Email,'','',
-		@RoleName
-	END
-
-	set @iid = @iid +1
-	
-END
-
-Select LOWER(@UserLogin),FirstName,LastName,RoleName,[Password],Email from @UserTable order by LastName
-END
-GO
-
-
 
 
 
@@ -6629,7 +6438,8 @@ SET NOCOUNT ON
 	('Reports'),
 	('DMS'),
 	('Interface'),
-	('Other')
+	('Other'),
+	('TimeStudy')
 
 	SELECT * from @ConfigType order by 1 asc
 	
@@ -6761,6 +6571,1341 @@ GO
 --*****************************************************
 --**************************SPROC**********************
 
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectResourcesShort') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectResourcesShort
+GO
+
+--exec sp_SelectResourcesShort ''
+
+CREATE PROCEDURE sp_SelectResourcesShort
+@Title varchar(20)
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	SELECT 
+	[BlueBinResourceID]
+      ,[FirstName]
+      ,[LastName]
+      ,[MiddleName]
+      ,LastName + ', ' + FirstName as Name
+	  ,Title
+  FROM [bluebin].[BlueBinResource] bbu
+  where 
+	Active = 1 and Title like '%' + @Title + '%'
+  order by LastName,[FirstName]
+
+END
+GO
+grant exec on sp_SelectResourcesShort to appusers
+GO
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectConfigDetail') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectConfigDetail
+GO
+
+--select * from bluebin.TimeStudyProcess
+--exec sp_SelectConfigDetail 'TimeStudy','Double Bin StockOut'
+
+CREATE PROCEDURE sp_SelectConfigDetail
+@ConfigType varchar(30),
+@ConfigName varchar(30)
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+select
+ConfigID,
+ConfigType,
+ConfigName,
+ConfigValue,
+Description,
+LastUpdated
+
+FROM bluebin.Config
+
+where Active = 1 and ConfigType = @ConfigType and ConfigName like '%' + @ConfigName + '%'
+
+END
+GO
+grant exec on sp_SelectConfigDetail to appusers
+GO
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyStockOutEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyStockOutEdit
+GO
+
+--exec sp_SelectTimeStudyStockOutEdit 'TEST'
+
+CREATE PROCEDURE sp_SelectTimeStudyStockOutEdit
+@TimeStudyStockOutID int
+
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+select
+	[TimeStudyStockOutID] ,
+	[Date] ,
+	[FacilityID],
+	[LocationID],
+	[TimeStudyProcessID],
+	convert(varchar(2),DATEPART(hh,StartTime))+':'+right(('0' + convert(varchar(2),DATEPART(mi,StartTime))),2) as StartTime,
+	convert(varchar(2),DATEPART(hh,StopTime))+':'+right(('0' + convert(varchar(2),DATEPART(mi,StopTime))),2) as StopTime,
+	[SKUS],
+	[Comments],
+	[BlueBinUserID] ,
+	[BlueBinResourceID]
+
+FROM bluebin.TimeStudyStockOut t
+WHERE [TimeStudyStockOutID] = @TimeStudyStockOutID 
+				
+
+END
+GO
+grant exec on sp_SelectTimeStudyStockOutEdit to appusers
+GO
+
+
+
+
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyStockOut') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyStockOut
+GO
+
+--select * from bluebin.TimeStudyStockOut
+--exec sp_SelectTimeStudyStockOut '%','%','%','2' 
+
+CREATE PROCEDURE sp_SelectTimeStudyStockOut
+@FacilityName varchar(50)
+,@LocationName varchar(50)
+,@UserName varchar(50)
+,@MostRecent int
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+declare @MostRecent2 int
+if @MostRecent = 2 
+BEGIN
+set @MostRecent = 0
+set @MostRecent2 = 1
+END
+
+select
+'Time Study Stock Out' as TimeStudy,
+t.TimeStudyStockOutID,
+t.Date,
+df.FacilityName,
+dl.LocationID,
+dl.LocationName,
+bbu.LastName + ', ' + bbu.FirstName as SubmittedBy,
+ISNULL(bbr.LastName + ', ' + bbr.FirstName,'') as ServiceTech,
+case when t.MostRecent = '1' then 'Yes' else 'No' end as MostRecent,
+c.ConfigValue as ProcessName,
+t.SKUS,
+DATEDIFF(ss,t.StartTime,t.StopTime) as [Seconds],
+DATEDIFF(mi,t.StartTime,t.StopTime) as [Minutes]
+
+FROM bluebin.TimeStudyStockOut t
+inner join bluebin.Config c on t.TimeStudyProcessID = c.ConfigID and c.ConfigType = 'TimeStudy'
+left join bluebin.DimLocation dl on t.LocationID = dl.LocationID and t.FacilityID = dl.LocationFacility
+inner join bluebin.DimFacility df on t.FacilityID = df.FacilityID
+inner join bluebin.BlueBinUser bbu on t.BlueBinUserID = bbu.BlueBinUserID
+left join bluebin.BlueBinResource bbr on t.BlueBinResourceID = bbr.BlueBinResourceID
+where t.Active = 1
+and df.FacilityName like '%' + @FacilityName + '%'
+and (dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' or t.LocationID like '%' + @LocationName + '%')
+and t.MostRecent in (@MostRecent,@MostRecent2)
+and case	
+	when @UserName <> '%' then bbu.LastName + ', ' + bbu.FirstName else '' end LIKE  '%' + @UserName + '%'
+
+END
+GO
+grant exec on sp_SelectTimeStudyStockOut to appusers
+GO
+
+
+
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyStageScanEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyStageScanEdit
+GO
+
+--exec sp_SelectTimeStudyStageScanEdit 'TEST'
+
+CREATE PROCEDURE sp_SelectTimeStudyStageScanEdit
+@TimeStudyStageScanID int
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+select
+	[TimeStudyStageScanID] ,
+	[Date] ,
+	[FacilityID],
+	[LocationID],
+	convert(varchar(2),DATEPART(hh,StartTime))+':'+right(('0' + convert(varchar(2),DATEPART(mi,StartTime))),2) as StartTime,
+	convert(varchar(2),DATEPART(hh,StopTime))+':'+right(('0' + convert(varchar(2),DATEPART(mi,StopTime))),2) as StopTime,
+	[SKUS],
+	[Comments],
+	[BlueBinUserID] ,
+	[BlueBinResourceID]
+
+FROM bluebin.TimeStudyStageScan t
+
+WHERE [TimeStudyStageScanID] = @TimeStudyStageScanID 
+				
+
+END
+GO
+grant exec on sp_SelectTimeStudyStageScanEdit to appusers
+GO
+
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyStageScan') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyStageScan
+GO
+
+--select * from bluebin.TimeStudyStageScan
+--exec sp_SelectTimeStudyStageScan '%','%','%','2' 
+
+CREATE PROCEDURE sp_SelectTimeStudyStageScan
+@FacilityName varchar(50)
+,@LocationName varchar(50)
+,@UserName varchar(50)
+,@MostRecent int
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+declare @MostRecent2 int
+if @MostRecent = 2 
+BEGIN
+set @MostRecent = 0
+set @MostRecent2 = 1
+END
+
+select
+'Time Study Stage Scanning' as TimeStudy,
+t.TimeStudyStageScanID,
+t.Date,
+df.FacilityName,
+dl.LocationID,
+case
+		when t.[LocationID] = 'Multiple' then t.LocationID
+		else case	when dl.LocationID = dl.LocationName then dl.LocationID
+					else dl.LocationID + ' - ' + dl.[LocationName] end end as LocationName,
+bbu.LastName + ', ' + bbu.FirstName as SubmittedBy,
+ISNULL(bbr.LastName + ', ' + bbr.FirstName,'') as ServiceTech,
+case when t.MostRecent = '1' then 'Yes' else 'No' end as MostRecent,
+t.SKUS,
+DATEDIFF(ss,t.StartTime,t.StopTime) as [Seconds],
+DATEDIFF(mi,t.StartTime,t.StopTime) as [Minutes]
+
+FROM bluebin.TimeStudyStageScan t
+inner join bluebin.DimLocation dl on t.LocationID = dl.LocationID and t.FacilityID = dl.LocationFacility
+inner join bluebin.DimFacility df on t.FacilityID = df.FacilityID
+inner join bluebin.BlueBinUser bbu on t.BlueBinUserID = bbu.BlueBinUserID
+left join bluebin.BlueBinResource bbr on t.BlueBinResourceID = bbr.BlueBinResourceID
+where t.Active = 1
+and df.FacilityName like '%' + @FacilityName + '%'
+and (dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' or t.LocationID like '%' + @LocationName + '%')
+and t.MostRecent in (@MostRecent,@MostRecent2)
+and case	
+	when @UserName <> '%' then bbu.LastName + ', ' + bbu.FirstName else '' end LIKE  '%' + @UserName + '%'
+
+END
+GO
+grant exec on sp_SelectTimeStudyStageScan to appusers
+GO
+
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyNodeServiceEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyNodeServiceEdit
+GO
+
+--exec sp_SelectTimeStudyNodeServiceEdit 'TEST'
+
+CREATE PROCEDURE sp_SelectTimeStudyNodeServiceEdit
+@TimeStudyNodeServiceID int
+
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+select
+	[TimeStudyNodeServiceID] ,
+	[Date] ,
+	[FacilityID],
+	[LocationID],
+	[TravelLocationID],
+	[TimeStudyProcessID],
+	convert(varchar(2),DATEPART(hh,StartTime))+':'+right(('0' + convert(varchar(2),DATEPART(mi,StartTime))),2) as StartTime,
+	convert(varchar(2),DATEPART(hh,StopTime))+':'+right(('0' + convert(varchar(2),DATEPART(mi,StopTime))),2) as StopTime,
+	[SKUS],
+	[Comments],
+	[BlueBinUserID] ,
+	[BlueBinResourceID]
+
+FROM bluebin.TimeStudyNodeService t
+
+WHERE [TimeStudyNodeServiceID] = @TimeStudyNodeServiceID 
+				
+
+END
+GO
+grant exec on sp_SelectTimeStudyNodeServiceEdit to appusers
+GO
+
+
+
+
+
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyNodeService') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyNodeService
+GO
+
+
+--select * from bluebin.TimeStudyNodeService
+--exec sp_SelectTimeStudyNodeService '%','%','%','2'
+
+CREATE PROCEDURE sp_SelectTimeStudyNodeService
+@FacilityName varchar(50)
+,@LocationName varchar(50)
+,@UserName varchar(50)
+,@MostRecent int
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+declare @MostRecent2 int
+if @MostRecent = 2 
+BEGIN
+set @MostRecent = 0
+set @MostRecent2 = 1
+END
+
+select
+'Time Study Node Service' as TimeStudy,
+t.TimeStudyNodeServiceID,
+t.Date,
+df.FacilityName,
+dl.LocationID,
+case
+		when t.[LocationID] = 'Multiple' then t.LocationID
+		else case	when dl.LocationID = dl.LocationName then dl.LocationID
+					else dl.LocationID + ' - ' + dl.[LocationName] end end as LocationName,
+bbu.LastName + ', ' + bbu.FirstName as SubmittedBy,
+ISNULL(bbr.LastName + ', ' + bbr.FirstName,'') as ServiceTech,
+case when t.MostRecent = '1' then 'Yes' else 'No' end as MostRecent,
+c.ConfigValue as ProcessName,
+t.SKUS,
+ISNULL(dl2.LocationID,'') as TravelLocationID,
+ISNULL(dl2.LocationName,'') as TravelLocationName,
+DATEDIFF(ss,t.StartTime,t.StopTime) as [Seconds],
+DATEDIFF(mi,t.StartTime,t.StopTime) as [Minutes]
+
+FROM bluebin.TimeStudyNodeService t
+inner join bluebin.Config c on t.TimeStudyProcessID = c.ConfigID and c.ConfigType = 'TimeStudy'
+inner join bluebin.DimLocation dl on t.LocationID = dl.LocationID and t.FacilityID = dl.LocationFacility
+inner join bluebin.DimFacility df on t.FacilityID = df.FacilityID
+inner join bluebin.BlueBinUser bbu on t.BlueBinUserID = bbu.BlueBinUserID
+left join bluebin.DimLocation dl2 on t.TravelLocationID = dl2.LocationID
+left join bluebin.BlueBinResource bbr on t.BlueBinResourceID = bbr.BlueBinResourceID
+where t.Active = 1
+and df.FacilityName like '%' + @FacilityName + '%'
+and (dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' or t.LocationID like '%' + @LocationName + '%')
+and t.MostRecent in (@MostRecent,@MostRecent2)
+and case	
+	when @UserName <> '%' then bbu.LastName + ', ' + bbu.FirstName else '' end LIKE  '%' + @UserName + '%'
+
+END
+GO
+grant exec on sp_SelectTimeStudyNodeService to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyGroup') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyGroup
+GO
+
+--select * from bluebin.TimeStudyGroup
+--exec sp_SelectTimeStudyGroup 
+
+CREATE PROCEDURE sp_SelectTimeStudyGroup
+@FacilityName varchar(50)
+,@LocationName varchar(50)
+,@GroupName varchar(50)
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+select
+df.FacilityName,
+dl.LocationID,
+dl.LocationName,
+t.GroupName,
+t.Active,
+t.LastUpdated,
+t.Description
+
+FROM bluebin.TimeStudyGroup t
+inner join bluebin.DimLocation dl on t.LocationID = dl.LocationID and t.FacilityID = dl.LocationFacility
+inner join bluebin.DimFacility df on t.FacilityID = df.FacilityID
+where t.Active = 1
+and df.FacilityName like '%' + @FacilityName + '%'
+and dl.LocationName like '%' + @LocationName + '%'
+and t.GroupName like '%' + @GroupName + '%'
+
+END
+GO
+grant exec on sp_SelectTimeStudyGroup to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyBinFillEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyBinFillEdit
+GO
+
+--exec sp_SelectTimeStudyBinFillEdit 'TEST'
+
+CREATE PROCEDURE sp_SelectTimeStudyBinFillEdit
+@TimeStudyBinFillID int
+
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+select
+	[TimeStudyBinFillID] ,
+	[Date] ,
+	[FacilityID],
+	[LocationID],
+	convert(varchar(2),DATEPART(hh,StartTime))+':'+right(('0' + convert(varchar(2),DATEPART(mi,StartTime))),2) as StartTime,
+	convert(varchar(2),DATEPART(hh,StopTime))+':'+right(('0' + convert(varchar(2),DATEPART(mi,StopTime))),2) as StopTime,
+	[SKUS],
+	[Comments],
+	[BlueBinUserID] ,
+	[BlueBinResourceID]
+
+FROM bluebin.TimeStudyBinFill t
+WHERE [TimeStudyBinFillID] = @TimeStudyBinFillID 				
+
+END
+GO
+grant exec on sp_SelectTimeStudyBinFillEdit to appusers
+GO
+
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyBinFill') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyBinFill
+GO
+
+--select * from bluebin.TimeStudyBinFill
+--exec sp_SelectTimeStudyBinFill '%','%','%','2'
+
+CREATE PROCEDURE sp_SelectTimeStudyBinFill
+@FacilityName varchar(50)
+,@LocationName varchar(50)
+,@UserName varchar(50)
+,@MostRecent int
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+declare @MostRecent2 int
+if @MostRecent = 2 
+BEGIN
+set @MostRecent = 0
+set @MostRecent2 = 1
+END
+
+select
+'Time Study Bin Fills' as TimeStudy,
+t.TimeStudyBinFillID,
+t.Date,
+df.FacilityName,
+dl.LocationID,
+dl.LocationName,
+bbu.LastName + ', ' + bbu.FirstName as SubmittedBy,
+ISNULL(bbr.LastName + ', ' + bbr.FirstName,'') as ServiceTech,
+case when t.MostRecent = '1' then 'Yes' else 'No' end as MostRecent,
+t.SKUS,
+DATEDIFF(ss,t.StartTime,t.StopTime) as [Seconds],
+DATEDIFF(mi,t.StartTime,t.StopTime) as [Minutes]
+
+FROM bluebin.TimeStudyBinFill t
+inner join bluebin.DimLocation dl on t.LocationID = dl.LocationID and t.FacilityID = dl.LocationFacility
+inner join bluebin.DimFacility df on t.FacilityID = df.FacilityID
+inner join bluebin.BlueBinUser bbu on t.BlueBinUserID = bbu.BlueBinUserID
+left join bluebin.BlueBinResource bbr on t.BlueBinResourceID = bbr.BlueBinResourceID
+where t.Active = 1
+and df.FacilityName like '%' + @FacilityName + '%'
+and (dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' or t.LocationID like '%' + @LocationName + '%')
+and t.MostRecent in (@MostRecent,@MostRecent2)
+and case	
+	when @UserName <> '%' then bbu.LastName + ', ' + bbu.FirstName else '' end LIKE  '%' + @UserName + '%'
+
+END
+GO
+grant exec on sp_SelectTimeStudyBinFill to appusers
+GO
+
+
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertTimeStudyStockOut') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_InsertTimeStudyStockOut
+GO
+
+/*
+exec sp_InsertTimeStudyStockOut '6','BB001','1','09:51','09:59','3','Test Comments',1,1
+exec sp_InsertTimeStudyStockOut '6','BB002','1','09:01','09:13','3','Test Comments',1,1
+exec sp_InsertTimeStudyStockOut '6','BB001','2','09:03','09:22','14','Test Comments',1,1
+exec sp_InsertTimeStudyStockOut '6','BB001','3','09:16','09:20','14','Test Comments',1,1
+exec sp_InsertTimeStudyStockOut '6','BB002','3','09:26','09:50','14','Test Comments',1,1
+exec sp_InsertTimeStudyStockOut '6','BB001','4','09:28','09:33','3','Test Comments',1,1
+exec sp_InsertTimeStudyStockOut '6','BB002','4','09:34','09:40','2','Test Comments',1,1
+exec sp_InsertTimeStudyStockOut '6','BB003','4','09:42','09:50','2','Test Comments',1,1
+
+select * from bluebin.TimeStudyStockOut
+select * from bluebin.TimeStudyProcess
+select * from bluebin.TimeStudyGroup
+*/
+
+CREATE PROCEDURE sp_InsertTimeStudyStockOut
+	@FacilityID int,
+	@LocationID varchar(10),	
+	@TimeStudyProcessID int,
+	@StartTime varchar(5),
+	@StopTime varchar(5),
+	@SKUS int,
+	@Comments varchar(max),
+	@BlueBinUser varchar(30),
+	@BlueBinResourceID int
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+update bluebin.TimeStudyStockOut set MostRecent = 0 
+where MostRecent = 1 and FacilityID = @FacilityID 
+--and LocationID = @LocationID 
+and TimeStudyProcessID = @TimeStudyProcessID 
+and [Date] < getdate()
+;
+
+declare @BlueBinUserID int 
+select @bluebinUserID = BlueBinUserID from bluebin.BlueBinUser where UserLogin = @BlueBinUser
+
+declare @Times Table ([Start] varchar(11),[Stop] varchar(11))
+insert into @Times select left(getdate(),11),left(getdate(),11) 
+
+Insert into bluebin.TimeStudyStockOut (	
+	[Date],
+	[FacilityID],
+	[LocationID],
+	[TimeStudyProcessID],
+	[StartTime],
+	[StopTime],
+	[SKUS],
+	[Comments],
+	[BlueBinUserID],
+	[BlueBinResourceID],
+	[MostRecent],
+	[Active],
+    [LastUpdated])
+VALUES (
+	getdate(), --Entered is current time
+	@FacilityID,
+	@LocationID,
+	@TimeStudyProcessID,
+	(select convert(datetime,([Start] + ' ' + @StartTime),112) from @Times),
+	(select convert(datetime,([Stop] + ' ' + @StopTime),112) from @Times),
+	@SKUS,
+	@Comments,
+	@BlueBinUserID,
+	@BlueBinResourceID,
+	1, --Most Recent  New entries default to 1
+	1, --Active Flag  Default to 1
+	getdate() --Last Updated is current time
+)
+
+
+Declare @TimeStudyID int, @BlueBinUserLogin varchar(50)
+SET @TimeStudyID = SCOPE_IDENTITY()
+
+	exec sp_InsertMasterLog @BlueBinUser,'TimeStudy','Submit Time Study Stock Out',@TimeStudyID
+
+END
+GO
+grant exec on sp_InsertTimeStudyStockOut to appusers
+GO
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertTimeStudyStageScan') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_InsertTimeStudyStageScan
+GO
+
+/*
+exec sp_InsertTimeStudyStageScan '6','BB001','08:51','08:57','19','Test Comments',1,1
+exec sp_InsertTimeStudyStageScan '6','BB002','09:03','09:10','19','Test Comments',1,1
+exec sp_InsertTimeStudyStageScan '6','BB003','09:16','09:20','19','Test Comments',1,1
+exec sp_InsertTimeStudyStageScan '6','BB004','09:28','09:29','19','Test Comments',1,1
+
+select * from bluebin.TimeStudyStageScan
+select * from bluebin.TimeStudyProcess
+select * from bluebin.TimeStudyGroup
+*/ 
+
+CREATE PROCEDURE sp_InsertTimeStudyStageScan
+	@FacilityID int,
+	@LocationID varchar(10),
+	@StartTime varchar(5),
+	@StopTime varchar(5),
+	@SKUS int,
+	@Comments varchar(max),
+	@BlueBinUser varchar(30),
+	@BlueBinResourceID int
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+update bluebin.TimeStudyStageScan set MostRecent = 0 where MostRecent = 1 and FacilityID = @FacilityID and LocationID = @LocationID and [Date] < getdate()
+;
+
+declare @BlueBinUserID int 
+select @bluebinUserID = BlueBinUserID from bluebin.BlueBinUser where UserLogin = @BlueBinUser
+
+declare @Times Table ([Start] varchar(11),[Stop] varchar(11))
+insert into @Times select left(getdate(),11),left(getdate(),11) 
+
+Insert into bluebin.TimeStudyStageScan (	
+	[Date],
+	[FacilityID],
+	[LocationID],
+	[StartTime],
+	[StopTime],
+	[SKUS],
+	[Comments],
+	[BlueBinUserID],
+	[BlueBinResourceID],
+	[MostRecent],
+	[Active],
+    [LastUpdated])
+VALUES (
+	getdate(), --Entered is current time
+	@FacilityID,
+	@LocationID,
+	(select convert(datetime,([Start] + ' ' + @StartTime),112) from @Times),
+	(select convert(datetime,([Stop] + ' ' + @StopTime),112) from @Times),
+	@SKUS,
+	@Comments,
+	@BlueBinUserID,
+	@BlueBinResourceID,
+	1, --Most Recent  New entries default to 1
+	1, --Active Flag  Default to 1
+	getdate() --Last Updated is current time
+)
+
+Declare @TimeStudyID int, @BlueBinUserLogin varchar(50)
+SET @TimeStudyID = SCOPE_IDENTITY()
+
+	exec sp_InsertMasterLog @BlueBinUser,'TimeStudy','Submit Time Study StageScan',@TimeStudyID
+
+END
+GO
+grant exec on sp_InsertTimeStudyStageScan to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertTimeStudyNodeService') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_InsertTimeStudyNodeService
+GO
+--
+
+/*
+exec sp_InsertTimeStudyNodeService '6','BB001','','5','08:51','08:57','19','Test Comments',1,1
+exec sp_InsertTimeStudyNodeService '6','BB001','','6','09:03','09:18','19','Test Comments',1,1
+exec sp_InsertTimeStudyNodeService '6','BB001','','7','09:16','09:23','19','Test Comments',1,1
+exec sp_InsertTimeStudyNodeService '6','BB001','BB002','8','09:28','09:29','19','Test Comments',1,1
+
+
+exec sp_InsertTimeStudyNodeService '6','BB002','','6','09:30','09:36','19','Test Comments',1,1
+exec sp_InsertTimeStudyNodeService '6','BB002','','7','09:37','09:38','19','Test Comments',1,1
+exec sp_InsertTimeStudyNodeService '6','BB002','BB003','8','09:40','09:42','19','Test Comments',1,1
+
+
+select * from bluebin.TimeStudyNodeService
+select * from bluebin.TimeStudyProcess
+select * from bluebin.TimeStudyGroup
+*/ 
+
+CREATE PROCEDURE sp_InsertTimeStudyNodeService
+	@FacilityID int,
+	@LocationID varchar(10),
+	@TravelLocationID varchar(10),	
+	@TimeStudyProcessID int,
+	@StartTime varchar(5),
+	@StopTime varchar(5),
+	@SKUS int,
+	@Comments varchar(max),
+	@BlueBinUser varchar(30),
+	@BlueBinResourceID int
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+update bluebin.TimeStudyNodeService set MostRecent = 0 where MostRecent = 1 and FacilityID = @FacilityID and LocationID = @LocationID and TimeStudyProcessID = @TimeStudyProcessID and [Date] < getdate()
+;
+
+declare @BlueBinUserID int 
+select @bluebinUserID = BlueBinUserID from bluebin.BlueBinUser where UserLogin = @BlueBinUser
+declare @Times Table ([Start] varchar(11),[Stop] varchar(11))
+insert into @Times select left(getdate(),11),left(getdate(),11) 
+
+Insert into bluebin.TimeStudyNodeService (	
+	[Date],
+	[FacilityID],
+	[LocationID],
+	[TravelLocationID], 
+	[TimeStudyProcessID],
+	[StartTime],
+	[StopTime],
+	[SKUS],
+	[Comments],
+	[BlueBinUserID],
+	[BlueBinResourceID],
+	[MostRecent],
+	[Active],
+    [LastUpdated])
+VALUES (
+	getdate(), --Entered is current time
+	@FacilityID,
+	@LocationID,
+	@TravelLocationID,
+	@TimeStudyProcessID,
+	(select convert(datetime,([Start] + ' ' + @StartTime),112) from @Times),
+	(select convert(datetime,([Stop] + ' ' + @StopTime),112) from @Times),
+	@SKUS,
+	@Comments,
+	@BlueBinUserID,
+	@BlueBinResourceID,
+	1, --Most Recent  New entries default to 1
+	1, --Active Flag  Default to 1
+	getdate() --Last Updated is current time
+)
+
+Declare @TimeStudyID int, @BlueBinUserLogin varchar(50)
+SET @TimeStudyID = SCOPE_IDENTITY()
+	exec sp_InsertMasterLog @BlueBinUser,'TimeStudy','Submit Time Study NodeService',@TimeStudyID
+
+
+END 
+
+GO
+grant exec on sp_InsertTimeStudyNodeService to appusers
+GO
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertTimeStudyGroup') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_InsertTimeStudyGroup
+GO
+
+--exec sp_InsertTimeStudyGroup 
+
+CREATE PROCEDURE sp_InsertTimeStudyGroup
+@FacilityID int,
+@LocationID varchar(10),
+@GroupName varchar(50),
+@Description varchar(255)
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+Insert into bluebin.TimeStudyGroup (
+	[FacilityID],
+	[LocationID],
+	[GroupName],
+	[Description],
+	[Active],
+	[LastUpdated] )
+VALUES (
+	@FacilityID,
+	@LocationID,
+	@GroupName,
+	@Description,
+	1,
+	getdate()
+)
+
+END
+GO
+grant exec on sp_InsertTimeStudyGroup to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertTimeStudyBinFill') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_InsertTimeStudyBinFill
+GO
+
+--exec sp_InsertTimeStudyBinFill '6','BB001','10:00','14:00','5','Test Comments',1,1
+/*
+select * from bluebin.TimeStudyBinFill
+select * from bluebin.TimeStudyProcess
+select * from bluebin.TimeStudyGroup
+*/
+
+CREATE PROCEDURE sp_InsertTimeStudyBinFill
+	@FacilityID int,
+	@LocationID varchar(10),	
+	@StartTime varchar(5),
+	@StopTime varchar(5),
+	@SKUS int,
+	@Comments varchar(max),
+	@BlueBinUser varchar(30),
+	@BlueBinResourceID int
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+update bluebin.TimeStudyBinFill set MostRecent = 0 where MostRecent = 1 and FacilityID = @FacilityID and LocationID = @LocationID and [Date] < getdate()
+
+declare @BlueBinUserID int 
+select @bluebinUserID = BlueBinUserID from bluebin.BlueBinUser where UserLogin = @BlueBinUser
+
+declare @Times Table ([Start] varchar(11),[Stop] varchar(11))
+insert into @Times select left(getdate(),11),left(getdate(),11) 
+
+
+Insert into bluebin.TimeStudyBinFill (	
+	[Date],
+	[FacilityID],
+	[LocationID],
+	[StartTime],
+	[StopTime],
+	[SKUS],
+	[Comments],
+	[BlueBinUserID],
+	[BlueBinResourceID],
+	[MostRecent],
+	[Active],
+    [LastUpdated])
+VALUES (
+	getdate(), --Entered is current time
+	@FacilityID,
+	@LocationID,
+	(select convert(datetime,([Start] + ' ' + @StartTime),112) from @Times),
+	(select convert(datetime,([Stop] + ' ' + @StopTime),112) from @Times),
+	@SKUS,
+	@Comments,
+	@BlueBinUserID,
+	@BlueBinResourceID,
+	1, --Most Recent  New entries default to 1
+	1, --Active Flag  Default to 1
+	getdate() --Last Updated is current time
+)
+
+Declare @TimeStudyID int, @BlueBinUserLogin varchar(50)
+SET @TimeStudyID = SCOPE_IDENTITY()
+
+	exec sp_InsertMasterLog @BlueBinUser,'TimeStudy','Submit Time Study BinFill',@TimeStudyID
+
+
+END
+
+GO
+grant exec on sp_InsertTimeStudyBinFill to appusers
+GO
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditTimeStudyStockOut') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_EditTimeStudyStockOut
+GO
+
+--exec sp_EditTimeStudyStockOut 
+CREATE PROCEDURE sp_EditTimeStudyStockOut
+@TimeStudyStockOutID int,
+@StartTime varchar(5),
+@StopTime varchar(5),
+@SKUS int,
+@Comments varchar(max),
+@BlueBinResourceID int
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+
+declare @Times Table ([Start] varchar(10),[Stop] varchar(10))
+insert into @Times select left(StartTime,10),left(StopTime,10) from [bluebin].[TimeStudyStockOut] where TimeStudyStockOutID = @TimeStudyStockOutID
+
+
+update [bluebin].[TimeStudyStockOut] 
+set 
+StartTime = (select convert(datetime,([Start] + ' ' + @StartTime),112) from @Times),
+StopTime = (select convert(datetime,([Stop] + ' ' + @StopTime),112) from @Times),
+SKUS = @SKUS,
+Comments = @Comments,
+BlueBinResourceID = @BlueBinResourceID
+
+where TimeStudyStockOutID = @TimeStudyStockOutID
+;
+declare @BlueBinUserID int 
+select @BlueBinUserID = BlueBinUserID from [bluebin].[TimeStudyStockOut] where TimeStudyStockOutID = @TimeStudyStockOutID
+exec sp_InsertMasterLog @BlueBinUserID,'TimeStudy','Edit Time Study Stock Out',@TimeStudyStockOutID
+
+
+END
+GO
+grant exec on sp_EditTimeStudyStockOut to appusers
+GO
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditTimeStudyStageScan') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_EditTimeStudyStageScan
+GO
+
+--exec sp_EditTimeStudyStageScan 
+CREATE PROCEDURE sp_EditTimeStudyStageScan
+@TimeStudyStageScanID int,
+@StartTime varchar(5),
+@StopTime varchar(5),
+@SKUS int,
+@Comments varchar(max),
+@BlueBinResourceID int
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+
+declare @Times Table ([Start] varchar(10),[Stop] varchar(10))
+insert into @Times select left(StartTime,10),left(StopTime,10) from [bluebin].[TimeStudyStockOut] where TimeStudyStockOutID = @TimeStudyStageScanID
+
+
+update [bluebin].[TimeStudyStageScan] 
+set 
+
+StartTime = (select convert(datetime,([Start] + ' ' + @StartTime),112) from @Times),
+StopTime = (select convert(datetime,([Stop] + ' ' + @StopTime),112) from @Times),
+SKUS = @SKUS,
+Comments = @Comments,
+BlueBinResourceID = @BlueBinResourceID
+
+where TimeStudyStageScanID = @TimeStudyStageScanID
+;
+declare @BlueBinUserID int 
+select @BlueBinUserID = BlueBinUserID from [bluebin].[TimeStudyStageScan] where TimeStudyStageScanID = @TimeStudyStageScanID
+exec sp_InsertMasterLog @BlueBinUserID,'TimeStudy','Edit Time Study StageScan',@TimeStudyStageScanID
+
+END
+GO
+grant exec on sp_EditTimeStudyStageScan to appusers
+GO
+
+
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditTimeStudyNodeService') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_EditTimeStudyNodeService
+GO
+
+--exec sp_EditTimeStudyNodeService 
+CREATE PROCEDURE sp_EditTimeStudyNodeService
+@TimeStudyNodeServiceID int,
+@TravelLocationID varchar(10),
+@StartTime varchar(5),
+@StopTime varchar(5),
+@SKUS int,
+@Comments varchar(max),
+@BlueBinResourceID int
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+
+declare @Times Table ([Start] varchar(10),[Stop] varchar(10))
+insert into @Times select left(StartTime,10),left(StopTime,10) from [bluebin].[TimeStudyStockOut] where TimeStudyStockOutID = @TimeStudyNodeServiceID
+
+
+update [bluebin].[TimeStudyNodeService] 
+set 
+
+StartTime = (select convert(datetime,([Start] + ' ' + @StartTime),112) from @Times),
+StopTime = (select convert(datetime,([Stop] + ' ' + @StopTime),112) from @Times),
+SKUS = @SKUS,
+Comments = @Comments,
+BlueBinResourceID = @BlueBinResourceID,
+TravelLocationID = @TravelLocationID
+
+where TimeStudyNodeServiceID = @TimeStudyNodeServiceID
+;
+declare @BlueBinUserID int 
+select @BlueBinUserID = BlueBinUserID from [bluebin].[TimeStudyNodeService] where TimeStudyNodeServiceID = @TimeStudyNodeServiceID
+exec sp_InsertMasterLog @BlueBinUserID,'TimeStudy','Edit Time Study NodeService',@TimeStudyNodeServiceID
+
+
+END
+GO
+grant exec on sp_EditTimeStudyNodeService to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditTimeStudyGroup') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_EditTimeStudyGroup
+GO
+
+--exec sp_EditTimeStudyGroup 
+CREATE PROCEDURE sp_EditTimeStudyGroup
+@TimeStudyGroupID int,
+@GroupName varchar(50),
+@Description varchar(255)
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+update [bluebin].[TimeStudyGroup] 
+set 
+GroupName = @GroupName,
+[Description] = @Description
+
+where TimeStudyGroupID = @TimeStudyGroupID
+
+
+END
+GO
+grant exec on sp_EditTimeStudyGroup to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditTimeStudyBinFill') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_EditTimeStudyBinFill
+GO
+
+--exec sp_EditTimeStudyBinFill 
+CREATE PROCEDURE sp_EditTimeStudyBinFill
+@TimeStudyBinFillID int,
+@StartTime varchar(5),
+@StopTime varchar(5),
+@SKUS int,
+@Comments varchar(max),
+@BlueBinResourceID int
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+
+declare @Times Table ([Start] varchar(10),[Stop] varchar(10))
+insert into @Times select left(StartTime,10),left(StopTime,10) from [bluebin].[TimeStudyStockOut] where TimeStudyStockOutID = @TimeStudyBinFillID
+
+
+update [bluebin].[TimeStudyBinFill] 
+set 
+
+StartTime = (select convert(datetime,([Start] + ' ' + @StartTime),112) from @Times),
+StopTime = (select convert(datetime,([Stop] + ' ' + @StopTime),112) from @Times),
+SKUS = @SKUS,
+Comments = @Comments,
+BlueBinResourceID = @BlueBinResourceID
+
+
+where TimeStudyBinFillID = @TimeStudyBinFillID
+;
+declare @BlueBinUserID int 
+select @BlueBinUserID = BlueBinUserID from [bluebin].[TimeStudyBinFill] where TimeStudyBinFillID = @TimeStudyBinFillID
+exec sp_InsertMasterLog @BlueBinUserID,'TimeStudy','Edit Time Study BinFill',@TimeStudyBinFillID
+
+END
+GO
+grant exec on sp_EditTimeStudyBinFill to appusers
+GO
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_DeleteTimeStudyStockOut') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_DeleteTimeStudyStockOut
+GO
+
+--exec sp_DeleteTimeStudyStockOut 'TEST'
+
+CREATE PROCEDURE sp_DeleteTimeStudyStockOut
+@TimeStudyStockOutID int
+
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+UPDATE bluebin.[TimeStudyStockOut] 
+set Active = 0, MostRecent = 0
+WHERE [TimeStudyStockOutID] = @TimeStudyStockOutID 
+				
+
+END
+GO
+grant exec on sp_DeleteTimeStudyStockOut to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_DeleteTimeStudyStageScan') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_DeleteTimeStudyStageScan
+GO
+
+--exec sp_DeleteTimeStudyStageScan 'TEST'
+
+CREATE PROCEDURE sp_DeleteTimeStudyStageScan
+@TimeStudyStageScanID int
+
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+UPDATE bluebin.[TimeStudyStageScan] 
+set Active = 0, MostRecent = 0
+WHERE [TimeStudyStageScanID] = @TimeStudyStageScanID 
+				
+
+END
+GO
+grant exec on sp_DeleteTimeStudyStageScan to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_DeleteTimeStudyNodeService') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_DeleteTimeStudyNodeService
+GO
+
+--exec sp_DeleteTimeStudyNodeService 'TEST'
+
+CREATE PROCEDURE sp_DeleteTimeStudyNodeService
+@TimeStudyNodeServiceID int
+
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+UPDATE bluebin.[TimeStudyNodeService] 
+set Active = 0, MostRecent = 0
+WHERE [TimeStudyNodeServiceID] = @TimeStudyNodeServiceID 
+				
+
+END
+GO
+grant exec on sp_DeleteTimeStudyNodeService to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_DeleteTimeStudyGroup') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_DeleteTimeStudyGroup
+GO
+
+--exec sp_DeleteTimeStudyGroup 'TEST'
+
+CREATE PROCEDURE sp_DeleteTimeStudyGroup
+@TimeStudyGroupID int
+
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+UPDATE bluebin.[TimeStudyGroup] 
+set Active = 0, LastUpdated = getdate()
+WHERE [TimeStudyGroupID] = @TimeStudyGroupID 
+				
+
+END
+GO
+grant exec on sp_DeleteTimeStudyGroup to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_DeleteTimeStudyBinFill') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_DeleteTimeStudyBinFill
+GO
+
+--exec sp_DeleteTimeStudyBinFill 'TEST'
+
+CREATE PROCEDURE sp_DeleteTimeStudyBinFill
+@TimeStudyBinFillID int
+
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+UPDATE bluebin.[TimeStudyBinFill] 
+set Active = 0, MostRecent = 0
+WHERE [TimeStudyBinFillID] = @TimeStudyBinFillID 
+				
+
+END
+GO
+grant exec on sp_DeleteTimeStudyBinFill to appusers
+GO
+
+
+
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -6770,7 +7915,7 @@ GO
 --*****************************************************
 --**************************SPROC**********************
 
-
+--*****************************************************--*****************************************************--*****************************************************--*****************************************************--*****************************************************
 Print 'Main Sproc Add/Updates Complete'
 
 --*****************************************************
@@ -7531,7 +8676,7 @@ Print 'SSP Sproc Add/Updates Complete'
 --Interface Sproc
 --*************************************************************************************************************************************************
 
-
+/*
 if exists (select * from dbo.sysobjects where id = object_id(N'xp_RQ500ScanBatchS') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure xp_RQ500ScanBatchS
 GO
@@ -7703,26 +8848,30 @@ GO
 
 grant exec on xp_RQ500ScanBatchS to BlueBin_RQ500User
 GO
-
+*/
 
 Print 'Interface Sproc Updates Complete'
---*************************************************************************************************************************************************
---Grant Exec
---*************************************************************************************************************************************************
 
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
 
-
-Print 'Grant Exec Complete'
---*************************************************************************************************************************************************
 --Key and Constraint Updates
---*************************************************************************************************************************************************
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
 
 
 Print 'Keys and Constraints Complete'
---*************************************************************************************************************************************************
---General CleanUp
---*************************************************************************************************************************************************
 
+
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
+--General Cleanup
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
 
 if not exists (select * from sys.indexes where name = 'DimItemIndex')
 BEGIN
@@ -7745,20 +8894,35 @@ GO
 
 
 Print 'General Cleanup Complete'
---*************************************************************************************************************************************************
+
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
 --Job Updates
---*************************************************************************************************************************************************
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
 
 
 
 Print 'Job Updates Complete'
 
 
---*************************************************************************************************************************************************
---Version Update
---*************************************************************************************************************************************************
 
-declare @version varchar(50) = '2.4.20161006' --Update Version Number here
+
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
+--Version Updates
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
+
+
+declare @version varchar(50) = '2.4.20161014' --Update Version Number here
 
 
 if not exists (select * from bluebin.Config where ConfigName = 'Version')

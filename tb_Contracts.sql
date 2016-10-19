@@ -54,7 +54,7 @@ UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'Contracts'
 
-select top 100* from tableau.Sourcing where VendorName is null
+
 
 GO
 

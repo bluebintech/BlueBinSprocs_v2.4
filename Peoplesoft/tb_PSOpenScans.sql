@@ -17,7 +17,11 @@ AS
 
 
 select 
-p.REQ_ID as [Order Num],
+case when p.REQ_ID is null or p.REQ_ID = ''
+then 
+	case when OrderNum like 'MSR%' then OrderNum
+		else OrderNum + ' (PO)' end
+	else ISNULL(p.REQ_ID,'') end as [Order Num],
 OrderNum as [PO Num],
 LineNum as [Line #],
 OrderDate as [Order Date],

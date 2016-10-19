@@ -15,6 +15,9 @@ CREATE PROCEDURE tb_CurrentStockOuts
 
 AS
 
+--declare @A Table ([Date] Date,FacilityID int,FacilityName varchar(255),LocationID varchar(10),LocationName varchar(30),ItemID varchar(32),ItemDescription varchar(30),OrderDate datetime,OrderNum varchar(10),LineNum int,OrderQty int)
+
+--insert into @A
 select 
 [Date],
 FacilityID,
@@ -68,6 +71,27 @@ scan.Date,
 scan.ScanBatchID
 
 order by LocationID
+
+
+--if not exists (select * from @A)
+--BEGIN
+--select 
+--getdate() as [Date],
+--'' as FacilityID,
+--'' as FacilityName,
+--'None' as LocationID,
+--'None' as LocationName,
+--'' as ItemID,
+--'' as ItemDescription,
+--'' as OrderDate,
+--'' as OrderNum,
+--'' as LineNum,
+--'' as OrderQty
+--END
+--ELSE
+--BEGIN
+--select * from @A order by LocationID
+--END
 GO
 
 grant exec on tb_CurrentStockOuts to public

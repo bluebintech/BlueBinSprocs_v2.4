@@ -1,6 +1,6 @@
 /*
 --*************************
-PEOPLSOFT SPECIFIC UPGRADE SCRIPTS
+PEOPLESOFT SPECIFIC UPGRADE SCRIPTS
 --*************************
 
 Upgrade Script to copy in the etl_ and tb_ sprocs used in both the daily etl and to populate data sources in the Tableau WOrkbooks
@@ -595,15 +595,20 @@ SELECT Row_number()
 
 INTO   bluebin.DimBin
 FROM   
-	(select distinct 
+	(
+	select distinct 
 	INV_CART_ID, 
 	INV_ITEM_ID,
-	--COMPARTMENT,
 	case when LEN(COMPARTMENT) < 6 then '' else COMPARTMENT end as COMPARTMENT,
-	QTY_OPTIMAL,
+	max(QTY_OPTIMAL) as QTY_OPTIMAL,
 	UNIT_OF_MEASURE
 	
-	 from dbo.CART_TEMPL_INV ) Bins
+	 from dbo.CART_TEMPL_INV
+	 group by 
+	 INV_CART_ID, 
+	INV_ITEM_ID,
+	case when LEN(COMPARTMENT) < 6 then '' else COMPARTMENT end,
+	UNIT_OF_MEASURE ) Bins
 	          
 	  LEFT JOIN dbo.CART_ATTRIB_INV Carts
               ON Bins.INV_CART_ID = Carts.INV_CART_ID
@@ -622,6 +627,7 @@ WHERE
 		--and Bins.INV_ITEM_ID = '0301101' and Bins.INV_CART_ID = '99059BB10C'
 		order by Locations.LOCATION,Bins.INV_ITEM_ID 
 
+
 /*****************************************		DROP Temp Tables	**************************************/
 
 
@@ -631,8 +637,10 @@ UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimBin'
 
-
 GO
+
+
+
 
 /*************************************************
 
@@ -872,7 +880,7 @@ UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'FactScan'
 
-
+GO
 
 
 IF EXISTS ( SELECT  *
@@ -1018,7 +1026,6 @@ SET LastModifiedDate = GETDATE()
 WHERE StepName = 'FactBinSnapshot'
 GO
 
-
 /*********************************************************************
 
 		FactIssue
@@ -1057,7 +1064,7 @@ AS
        b.LocationKey AS LocationKey,
        c.LocationKey AS ShipLocationKey,
        case when @Facility is not null or @Facility <> '' then @Facility else '' end as ShipFacilityKey,
-       c.BlueBinFlag,
+       ISNULL(c.BlueBinFlag,0) as BlueBinFlag,
 	   d.ItemKey AS ItemKey,
        '' AS  SourceSystem,
        Picks.ORDER_NO AS ReqNumber,
@@ -1068,7 +1075,7 @@ AS
        Picks.QTY_PICKED AS  IssueQty,
        case when PICK_BATCH_ID = 0 then 1 else 0 end AS StatCall,
        1  AS IssueCount
---INTO bluebin.FactIssue
+INTO bluebin.FactIssue
 FROM   dbo.IN_DEMAND Picks
 	  LEFT JOIN bluebin.DimLocation b
                ON Picks.BUSINESS_UNIT = b.LocationID
@@ -1090,7 +1097,6 @@ SET LastModifiedDate = GETDATE()
 WHERE StepName = 'FactIssue'
 
 GO
-
 
 /*********************************************************************
 
@@ -1285,7 +1291,7 @@ SELECT distinct DimBin.BinKey,
        FactBinSnapshot.HotScanSinThreshold,
        FactBinSnapshot.StockOutSinThreshold,
        FactBinSnapshot.StockOutsDaily,
-	   FactBinSnapshot.TimeToFill,
+	   FactBinSnapshot.TimeToFill,  
 	   FactBinSnapshot.BinVelocity,
        DimBinStatus.BinStatus,
        DimItem.ItemDescription,
@@ -2598,6 +2604,8 @@ GO
 
 
 
+
+
 IF EXISTS ( SELECT  *
             FROM    sys.objects
             WHERE   object_id = OBJECT_ID(N'tb_OrderVolume')
@@ -2616,28 +2624,25 @@ declare @Facility int
   
 
 select 
-rh.REQ_DT as CREATION_DATE,
+k.OrderDate as CREATION_DATE,
 @Facility as COMPANY,
 df.FacilityName,
-rd.LOCATION as REQ_LOCATION,
-rq.REQ_ID,
-rq.LINE_NBR as Lines,
-rh.REQUESTOR_ID as Name,
+k.LocationID as REQ_LOCATION,
+k.OrderNum as REQ_NUMBER,
+k.LineNum as Lines,
+'BlueBin' as NAME,
 dl.BlueBinFlag
-from REQ_LINE rq
-INNER JOIN REQ_LN_DISTRIB rd on rq.REQ_ID = rd.REQ_ID
-inner join REQ_HDR rh on rq.REQ_ID = rh.REQ_ID
-inner join bluebin.DimLocation dl on @Facility = rtrim(dl.LocationFacility) and rd.LOCATION = dl.LocationID
+from tableau.Kanban k
+inner join bluebin.DimLocation dl on @Facility = rtrim(dl.LocationFacility) and k.LocationID = dl.LocationID
 inner join bluebin.DimFacility df on @Facility = rtrim(df.FacilityID)
 --left join REQUESTER r on rh.REQUESTER = r.REQUESTER and rq.COMPANY = r.COMPANY
-where rh.REQ_DT > getdate()-15
+where k.OrderDate > getdate()-15 and Scan > 0
 
 
 
 GO
 grant exec on tb_OrderVolume to public
 GO
-
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
@@ -2849,6 +2854,7 @@ GO
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
 
+
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_ConesDeployed') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_ConesDeployed
 GO
@@ -2862,6 +2868,10 @@ CREATE PROCEDURE tb_ConesDeployed
 AS
 BEGIN
 SET NOCOUNT ON
+
+--Declare @A table (ConeDeployed int,Deployed datetime,ExpectedDelivery Datetime,ConeReturned int,Returned datetime,FacilityID int,FacilityName varchar(255),LocationID varchar(15),LocationName varchar(50),ItemID varchar(32),ItemDescription varchar(50),BinSequence varchar(20),SubProduct varchar(3),AllLocations varchar(max))
+	
+--insert into @A	
 	SELECT 
 	cd.ConeDeployed,
 	cd.Deployed,
@@ -2894,10 +2904,39 @@ SET NOCOUNT ON
 						FROM bluebin.DimBin il1 
 						GROUP BY il1.ItemID )other on cd.ItemID = other.ItemID
 	where cd.Deleted = 0 and ConeReturned = 0
+
+
+
+--if not exists (select * from @A)
+--BEGIN
+--select 
+--	1 as ConeDeployed,
+--	getdate() as Deployed,
+--	getdate() as ExpectedDelivery,
+--	0 as ConeReturned,
+--	'' as Returned,
+--	'' asFacilityID,
+--	'' as FacilityName,
+--	'None' as LocationID,
+--	'None' as LocationName,
+--	'' as ItemID,
+--	'' as ItemDescription,
+--	'' as BinSequence,
+--	'' as SubProduct,
+--	'' as AllLocations
+	
+--	END
+--ELSE
+--BEGIN
+--select * from @A
+--END
+
+
 END
 GO
 grant exec on tb_ConesDeployed to appusers
 GO
+
 
 
 
@@ -2962,6 +3001,9 @@ CREATE PROCEDURE tb_CurrentStockOuts
 
 AS
 
+--declare @A Table ([Date] Date,FacilityID int,FacilityName varchar(255),LocationID varchar(10),LocationName varchar(30),ItemID varchar(32),ItemDescription varchar(30),OrderDate datetime,OrderNum varchar(10),LineNum int,OrderQty int)
+
+--insert into @A
 select 
 [Date],
 FacilityID,
@@ -3015,17 +3057,31 @@ scan.Date,
 scan.ScanBatchID
 
 order by LocationID
+
+
+--if not exists (select * from @A)
+--BEGIN
+--select 
+--getdate() as [Date],
+--'' as FacilityID,
+--'' as FacilityName,
+--'None' as LocationID,
+--'None' as LocationName,
+--'' as ItemID,
+--'' as ItemDescription,
+--'' as OrderDate,
+--'' as OrderNum,
+--'' as LineNum,
+--'' as OrderQty
+--END
+--ELSE
+--BEGIN
+--select * from @A order by LocationID
+--END
 GO
 
 grant exec on tb_CurrentStockOuts to public
 GO
---*********************************************************************************************
---Tableau Sproc  These load data into the datasources for Tableau
---*********************************************************************************************
-
---*********************************************************************************************
---Tableau Sproc  These load data into the datasources for Tableau
---*********************************************************************************************
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
@@ -3494,7 +3550,11 @@ AS
 
 
 select 
-p.REQ_ID as [Order Num],
+case when p.REQ_ID is null or p.REQ_ID = ''
+then 
+	case when OrderNum like 'MSR%' then OrderNum
+		else OrderNum + ' (PO)' end
+	else ISNULL(p.REQ_ID,'') end as [Order Num],
 OrderNum as [PO Num],
 LineNum as [Line #],
 OrderDate as [Order Date],
@@ -3601,7 +3661,7 @@ FROM @History  a
 				   case when EOMONTH(getdate()) = EOMONTH(b.Date) then (select max(Date) from bluebin.FactWHHistory) else EOMONTH(b.Date) end as MonthEnd
 			FROM   bluebin.FactWHHistory b 
 			where b.DollarsOnHand > 0 and b.Date = case when EOMONTH(getdate()) = EOMONTH(b.Date) then (select max(Date) from bluebin.FactWHHistory) else EOMONTH(b.Date) end  
-			) c on a.MonthEnd = c.Date and a.FacilityName = c.FacilityName and a.LocationID = c.LocationID
+			) c on a.MonthEnd = c.Date and a.FacilityName COLLATE DATABASE_DEFAULT = c.FacilityName COLLATE DATABASE_DEFAULT and a.LocationID COLLATE DATABASE_DEFAULT = c.LocationID COLLATE DATABASE_DEFAULT
 order by a.Date desc       
 
 

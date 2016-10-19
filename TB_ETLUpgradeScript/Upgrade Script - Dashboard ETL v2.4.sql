@@ -11,8 +11,6 @@ Upgrade Script to copy in the etl_ and tb_ sprocs used in both the daily etl and
 */
 
 
-
-
 SET ANSI_NULLS ON
 GO
 
@@ -24,6 +22,10 @@ GO
 
 SET NOCOUNT ON
 GO
+
+
+
+
 
 /*********************************************************************
 --tableau schema
@@ -236,6 +238,7 @@ GO
 
 
 
+
 --/******************************************
 
 --			DimItem
@@ -331,15 +334,15 @@ GROUP  BY ITEM
 
 SELECT 
    il1.ITEM,
-   STUFF((SELECT  ', '  + il2.Bins.COMPARTMENT + '(' + rtrim(il2.LOCATION) + ')'
+   STUFF((SELECT  ', '  + il2.PREFER_BIN + '(' + rtrim(il2.LOCATION) + ')'
           FROM ITEMLOC il2
           WHERE  il2.LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
-		  and il2.Bins.COMPARTMENT <> '' and il2.ACTIVE_STATUS = 'A' and il2.ITEM = il1.ITEM 
+		  and il2.PREFER_BIN <> '' and il2.ACTIVE_STATUS = 'A' and il2.ITEM = il1.ITEM 
 		  order by il2.LOCATION
-          FOR XML PATH('')), 1, 1, '') [Bins.COMPARTMENT]
+          FOR XML PATH('')), 1, 1, '') [PREFER_BIN]
 INTO   #StockLocations
 FROM ITEMLOC il1
-WHERE il1.LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') and il1.Bins.COMPARTMENT <> '' and il1.ACTIVE_STATUS = 'A'
+WHERE il1.LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') and il1.PREFER_BIN <> '' and il1.ACTIVE_STATUS = 'A'
 
 GROUP BY il1.ITEM
 ORDER BY 1
@@ -350,11 +353,11 @@ ORDER BY 1
 --             OVER(
 --               ORDER BY ITEM,LOCATION) as Num,
 --	LOCATION,ITEM,
---       Bins.COMPARTMENT
+--       PREFER_BIN
 --INTO   #StockLocations
 --FROM   ITEMLOC
 --WHERE  LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') 
---and ACTIVE_STATUS = 'A' and ITEM in  ('61830','12296') and Bins.COMPARTMENT <> ''
+--and ACTIVE_STATUS = 'A' and ITEM in  ('61830','12296') and PREFER_BIN <> ''
 
 
 SELECT distinct  a.ITEM,
@@ -421,7 +424,7 @@ SELECT Row_number()
        d.VENDOR_VNAME                      AS ItemVendor,
        c.VENDOR                            AS ItemVendorNumber,
        f.LAST_PO_DATE                      AS LastPODate,
-       ltrim(g.Bins.COMPARTMENT)                       AS StockLocation,
+       ltrim(g.PREFER_BIN)                       AS StockLocation,
        h.VEN_ITEM                          AS VendorItemNumber,
 	   a.STOCK_UOM							AS StockUOM,
        h.UOM                               AS BuyUOM,
@@ -472,6 +475,8 @@ UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimItem'
 GO
+
+
 
 
 
@@ -676,9 +681,11 @@ WHERE StepName = 'DimBinStatus'
 GO
 
 
---****************************************************************************
---DimBin
---****************************************************************************
+/***********************************************************
+
+			DimBin
+
+***********************************************************/
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -692,7 +699,7 @@ CREATE PROCEDURE etl_DimBin
 
 AS
 
---exec etl_DimBin
+--exec etl_DimBin select * from bluebin.DimBin
 /***************************		DROP DimBin		********************************/
 BEGIN TRY
     DROP TABLE bluebin.DimBin
@@ -719,8 +726,8 @@ SELECT Row_number()
        ENTERED_UOM,
        UNIT_COST
 INTO   #ItemReqs
-FROM   REQLINE a INNER JOIN bluebin.DimLocation b ON a.REQ_LOCATION = b.LocationID
-WHERE  b.BlueBinFlag = 1
+FROM   REQLINE a INNER JOIN bluebin.DimLocation b ON ltrim(rtrim(a.REQ_LOCATION)) = ltrim(rtrim(b.LocationID))
+WHERE  b.BlueBinFlag = 1 
 
 SELECT Row_number()
          OVER(
@@ -733,8 +740,9 @@ INTO   #ItemOrders
 FROM   POLINE
 WHERE  ITEM_TYPE IN ( 'I', 'N' )
        AND ITEM IN (SELECT DISTINCT ITEM
-                    FROM   ITEMLOC a INNER JOIN bluebin.DimLocation b ON a.LOCATION = b.LocationID
+                    FROM   ITEMLOC a INNER JOIN bluebin.DimLocation b ON ltrim(rtrim(a.LOCATION)) = ltrim(rtrim(b.LocationID))
 WHERE  b.BlueBinFlag = 1)
+
 
 
 SELECT distinct a.ITEM,
@@ -747,8 +755,9 @@ FROM   ITEMLOC a
                  AND a.LOCATION = b.LOCATION
 WHERE  
 a.LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') 
-and a.ACTIVE_STATUS = 'A' --and a.ITEM = '3733'
+and a.ACTIVE_STATUS = 'A' 
 group by a.ITEM
+--order by a.ITEM
        --,a.GL_CATEGORY
 
 
@@ -760,16 +769,16 @@ c.LAST_ISS_COST
 INTO   #ItemStore
 FROM   ITEMLOC i
 left join (select ITEMLOC.ITEM,max(ITEMLOC.LAST_ISS_COST) as LAST_ISS_COST from ITEMLOC
-				inner join (select ITEM,max(LAST_ISSUE_DT) as t from ITEMLOC where ITEM = '1915' group by ITEM) cost on ITEMLOC.ITEM = cost.ITEM and ITEMLOC.LAST_ISSUE_DT = cost.t
+				inner join (select ITEM,max(LAST_ISSUE_DT) as t from ITEMLOC group by ITEM) cost on ITEMLOC.ITEM = cost.ITEM and ITEMLOC.LAST_ISSUE_DT = cost.t
 				group by ITEMLOC.ITEM ) c on i.ITEM = c.ITEM
 WHERE  i.LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')  and i.ACTIVE_STATUS = 'A'  
-
+--order by i.ITEM
 
 SELECT distinct ITEM,CONSIGNMENT_FL 
 INTO #Consignment
 FROM ITEMMAST
-WHERE  ITEM in (select ITEM from ITEMLOC where LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION'))
-
+WHERE  ITEM in (select ITEM from ITEMLOC where LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')) 
+order by ITEM
 
 
 /***********************************		CREATE	DimBin		***********************************/
@@ -780,25 +789,25 @@ SELECT Row_number()
 			   ITEMLOC.COMPANY																			AS BinFacility,
            ITEMLOC.ITEM                                                                               AS ItemID,
            ITEMLOC.LOCATION                                                                           AS LocationID,
-           Bins.COMPARTMENT                                                                                 AS BinSequence,
-		   CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then LEFT(Bins.COMPARTMENT,2) 
-				else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN LEFT(Bins.COMPARTMENT, 2) ELSE LEFT(Bins.COMPARTMENT, 1) END END as BinCart,
-			CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then SUBSTRING(Bins.COMPARTMENT, 3, 1) 
-				else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN SUBSTRING(Bins.COMPARTMENT, 3, 1) ELSE SUBSTRING(Bins.COMPARTMENT, 2,1) END END as BinRow,
-			CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then SUBSTRING(Bins.COMPARTMENT, 4, 2)
-				else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN SUBSTRING (Bins.COMPARTMENT,4,2) ELSE SUBSTRING(Bins.COMPARTMENT, 3,2) END END as BinPosition,	
+           PREFER_BIN                                                                                 AS BinSequence,
+		   		   	CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then LEFT(PREFER_BIN,2) 
+				else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN LEFT(PREFER_BIN, 2) ELSE LEFT(PREFER_BIN, 1) END END as BinCart,
+			CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then SUBSTRING(PREFER_BIN, 3, 1) 
+				else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN SUBSTRING(PREFER_BIN, 3, 1) ELSE SUBSTRING(PREFER_BIN, 2,1) END END as BinRow,
+			CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then SUBSTRING(PREFER_BIN, 4, 2)
+				else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN SUBSTRING (PREFER_BIN,4,2) ELSE SUBSTRING(PREFER_BIN, 3,2) END END as BinPosition,	
 			CASE
-				WHEN Bins.COMPARTMENT LIKE 'CARD%' THEN 'WALL'
+				WHEN PREFER_BIN LIKE 'CARD%' THEN 'WALL'
 					ELSE 
-						CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then RIGHT(Bins.COMPARTMENT,2) 
-							else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN RIGHT(Bins.COMPARTMENT, 2) ELSE RIGHT(Bins.COMPARTMENT, 3) END END
+						CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then RIGHT(PREFER_BIN,2) 
+							else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN RIGHT(PREFER_BIN, 2) ELSE RIGHT(PREFER_BIN, 3) END END
            END                                                                                        AS BinSize,
            UOM                                                                                        AS BinUOM,
            REORDER_POINT                                                                              AS BinQty,
            CASE
              WHEN LEADTIME_DAYS = 0 or LEADTIME_DAYS is null THEN (Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime')
              ELSE LEADTIME_DAYS
-           END                                                                                          AS BinLeadTime,
+           END                                                                                        AS BinLeadTime,
            #BinAddDates.BinAddedDate                                                                  AS BinGoLiveDate,
            COALESCE(COALESCE(#ItemReqs.UNIT_COST, #ItemOrders.ENT_UNIT_CST), #ItemStore.LAST_ISS_COST) AS BinCurrentCost,
            CASE
@@ -811,10 +820,10 @@ SELECT Row_number()
     INTO   bluebin.DimBin
     FROM   ITEMLOC  
            INNER JOIN bluebin.DimLocation
-                   ON ITEMLOC.LOCATION = DimLocation.LocationID
+                   ON ltrim(rtrim(ITEMLOC.LOCATION)) = ltrim(rtrim(DimLocation.LocationID))
 				   AND ITEMLOC.COMPANY = DimLocation.LocationFacility			   
            INNER JOIN #BinAddDates
-                   ON ITEMLOC.LOCATION = #BinAddDates.REQ_LOCATION
+                   ON ltrim(rtrim(ITEMLOC.LOCATION)) = ltrim(rtrim(#BinAddDates.REQ_LOCATION))
            LEFT JOIN #ItemReqs
                   ON ITEMLOC.ITEM = #ItemReqs.ITEM
                      AND ITEMLOC.UOM = #ItemReqs.ENTERED_UOM
@@ -830,8 +839,8 @@ SELECT Row_number()
 		   LEFT JOIN #Consignment
                   ON ITEMLOC.ITEM = #Consignment.ITEM
 	WHERE DimLocation.BlueBinFlag = 1
-	--and ITEMLOC.ITEM = '1915'
-
+	order by LocationID,ItemID
+	
 /*****************************************		DROP Temp Tables	**************************************/
 
 DROP TABLE #BinAddDates
@@ -846,6 +855,7 @@ GO
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimBin'
+
 
 
 /*************************************************
@@ -1567,7 +1577,7 @@ DROP PROCEDURE  tb_Sourcing
 GO
 
 CREATE PROCEDURE	tb_Sourcing
---exec tb_Sourcing  select count(*) from tableau.Sourcing where PODate >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE')
+
 AS
 
 /********************************		DROP Sourcing		**********************************/
@@ -1834,7 +1844,7 @@ UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'Contracts'
 
-select top 100* from tableau.Sourcing where VendorName is null
+
 
 GO
 
@@ -1991,13 +2001,6 @@ END
 
 GO
 
-/************************************************************
-
-			DimWarehouseItem
-
-************************************************************/
-
-
 IF EXISTS ( SELECT  *
             FROM    sys.objects
             WHERE   object_id = OBJECT_ID(N'etl_DimWarehouseItem')
@@ -2035,7 +2038,7 @@ SELECT
        b.ItemManufacturerNumber,
        b.ItemVendor,
        b.ItemVendorNumber,
-       a.Bins.COMPARTMENT    AS StockLocation,
+       a.PREFER_BIN    AS StockLocation,
        a.SOH_QTY       AS SOHQty,
        a.MAX_ORDER     AS ReorderQty,
        a.REORDER_POINT AS ReorderPoint,
@@ -2069,6 +2072,7 @@ SET LastModifiedDate = GETDATE()
 WHERE StepName = 'Warehouse Item'
 
 GO
+
 
 
 
@@ -2581,12 +2585,12 @@ FROM
 	b.NAME,
 	USER_FIELD1,
 	USER_FIELD3,
-	CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then LEFT(Bins.COMPARTMENT,2) 
-		else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN LEFT(Bins.COMPARTMENT, 2) ELSE LEFT(Bins.COMPARTMENT, 1) END END as Cart,
-	CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then SUBSTRING(Bins.COMPARTMENT, 3, 1) 
-		else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN SUBSTRING(Bins.COMPARTMENT, 3, 1) ELSE SUBSTRING(Bins.COMPARTMENT, 2,1) END END as Row,
-	CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then SUBSTRING(Bins.COMPARTMENT, 4, 2)
-		else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN SUBSTRING (Bins.COMPARTMENT,4,2) ELSE SUBSTRING(Bins.COMPARTMENT, 3,2) END END as Position	
+	CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then LEFT(PREFER_BIN,2) 
+		else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN LEFT(PREFER_BIN, 2) ELSE LEFT(PREFER_BIN, 1) END END as Cart,
+	CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then SUBSTRING(PREFER_BIN, 3, 1) 
+		else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN SUBSTRING(PREFER_BIN, 3, 1) ELSE SUBSTRING(PREFER_BIN, 2,1) END END as Row,
+	CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then SUBSTRING(PREFER_BIN, 4, 2)
+		else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN SUBSTRING (PREFER_BIN,4,2) ELSE SUBSTRING(PREFER_BIN, 3,2) END END as Position	
 FROM ITEMLOC a 
 INNER JOIN RQLOC b ON a.LOCATION = b.REQ_LOCATION and a.COMPANY = b.COMPANY
 WHERE LEFT(REQ_LOCATION, 2) IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) or REQ_LOCATION in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION)) a
@@ -2608,7 +2612,6 @@ END
 GO
 grant exec on tb_ItemLocator to public
 GO
-
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
@@ -3471,6 +3474,10 @@ CREATE PROCEDURE tb_ConesDeployed
 AS
 BEGIN
 SET NOCOUNT ON
+
+--Declare @A table (ConeDeployed int,Deployed datetime,ExpectedDelivery Datetime,ConeReturned int,Returned datetime,FacilityID int,FacilityName varchar(255),LocationID varchar(15),LocationName varchar(50),ItemID varchar(32),ItemDescription varchar(50),BinSequence varchar(20),SubProduct varchar(3),AllLocations varchar(max))
+	
+--insert into @A	
 	SELECT 
 	cd.ConeDeployed,
 	cd.Deployed,
@@ -3503,10 +3510,40 @@ SET NOCOUNT ON
 						FROM bluebin.DimBin il1 
 						GROUP BY il1.ItemID )other on cd.ItemID = other.ItemID
 	where cd.Deleted = 0 and ConeReturned = 0
+
+
+
+--if not exists (select * from @A)
+--BEGIN
+--select 
+--	1 as ConeDeployed,
+--	getdate() as Deployed,
+--	getdate() as ExpectedDelivery,
+--	0 as ConeReturned,
+--	'' as Returned,
+--	'' asFacilityID,
+--	'' as FacilityName,
+--	'None' as LocationID,
+--	'None' as LocationName,
+--	'' as ItemID,
+--	'' as ItemDescription,
+--	'' as BinSequence,
+--	'' as SubProduct,
+--	'' as AllLocations
+	
+--	END
+--ELSE
+--BEGIN
+--select * from @A
+--END
+
+
 END
 GO
 grant exec on tb_ConesDeployed to appusers
 GO
+
+
 
 
 
@@ -3554,6 +3591,8 @@ GO
 grant exec on tb_FillRateUtilization to public
 GO
 
+
+
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
@@ -3571,6 +3610,9 @@ CREATE PROCEDURE tb_CurrentStockOuts
 
 AS
 
+--declare @A Table ([Date] Date,FacilityID int,FacilityName varchar(255),LocationID varchar(10),LocationName varchar(30),ItemID varchar(32),ItemDescription varchar(30),OrderDate datetime,OrderNum varchar(10),LineNum int,OrderQty int)
+
+--insert into @A
 select 
 [Date],
 FacilityID,
@@ -3624,6 +3666,27 @@ scan.Date,
 scan.ScanBatchID
 
 order by LocationID
+
+
+--if not exists (select * from @A)
+--BEGIN
+--select 
+--getdate() as [Date],
+--'' as FacilityID,
+--'' as FacilityName,
+--'None' as LocationID,
+--'None' as LocationName,
+--'' as ItemID,
+--'' as ItemDescription,
+--'' as OrderDate,
+--'' as OrderNum,
+--'' as LineNum,
+--'' as OrderQty
+--END
+--ELSE
+--BEGIN
+--select * from @A order by LocationID
+--END
 GO
 
 grant exec on tb_CurrentStockOuts to public
@@ -4220,11 +4283,10 @@ GO
 
 
 
-
-
-
-
-
 Print 'Tableau (tb) sprocs updated'
 Print 'DB: ' + DB_NAME() + ' updated'
+GO
+
+ENDSCRIPT:
+
 GO

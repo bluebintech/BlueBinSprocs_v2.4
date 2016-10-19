@@ -18,21 +18,19 @@ declare @Facility int
   
 
 select 
-rh.REQ_DT as CREATION_DATE,
+k.OrderDate as CREATION_DATE,
 @Facility as COMPANY,
 df.FacilityName,
-rd.LOCATION as REQ_LOCATION,
-rq.REQ_ID,
-rq.LINE_NBR as Lines,
-rh.REQUESTOR_ID as Name,
+k.LocationID as REQ_LOCATION,
+k.OrderNum as REQ_NUMBER,
+k.LineNum as Lines,
+'BlueBin' as NAME,
 dl.BlueBinFlag
-from REQ_LINE rq
-INNER JOIN REQ_LN_DISTRIB rd on rq.REQ_ID = rd.REQ_ID
-inner join REQ_HDR rh on rq.REQ_ID = rh.REQ_ID
-inner join bluebin.DimLocation dl on @Facility = rtrim(dl.LocationFacility) and rd.LOCATION = dl.LocationID
+from tableau.Kanban k
+inner join bluebin.DimLocation dl on @Facility = rtrim(dl.LocationFacility) and k.LocationID = dl.LocationID
 inner join bluebin.DimFacility df on @Facility = rtrim(df.FacilityID)
 --left join REQUESTER r on rh.REQUESTER = r.REQUESTER and rq.COMPANY = r.COMPANY
-where rh.REQ_DT > getdate()-15
+where k.OrderDate > getdate()-15 and Scan > 0
 
 
 

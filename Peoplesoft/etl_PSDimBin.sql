@@ -69,15 +69,20 @@ SELECT Row_number()
 
 INTO   bluebin.DimBin
 FROM   
-	(select distinct 
+	(
+	select distinct 
 	INV_CART_ID, 
 	INV_ITEM_ID,
-	--COMPARTMENT,
 	case when LEN(COMPARTMENT) < 6 then '' else COMPARTMENT end as COMPARTMENT,
-	QTY_OPTIMAL,
+	max(QTY_OPTIMAL) as QTY_OPTIMAL,
 	UNIT_OF_MEASURE
 	
-	 from dbo.CART_TEMPL_INV ) Bins
+	 from dbo.CART_TEMPL_INV
+	 group by 
+	 INV_CART_ID, 
+	INV_ITEM_ID,
+	case when LEN(COMPARTMENT) < 6 then '' else COMPARTMENT end,
+	UNIT_OF_MEASURE ) Bins
 	          
 	  LEFT JOIN dbo.CART_ATTRIB_INV Carts
               ON Bins.INV_CART_ID = Carts.INV_CART_ID
@@ -95,6 +100,7 @@ WHERE
 
 		--and Bins.INV_ITEM_ID = '0301101' and Bins.INV_CART_ID = '99059BB10C'
 		order by Locations.LOCATION,Bins.INV_ITEM_ID 
+
 
 /*****************************************		DROP Temp Tables	**************************************/
 

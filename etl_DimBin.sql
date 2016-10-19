@@ -1,3 +1,9 @@
+/***********************************************************
+
+			DimBin
+
+***********************************************************/
+
 IF EXISTS ( SELECT  *
             FROM    sys.objects
             WHERE   object_id = OBJECT_ID(N'etl_DimBin')
@@ -150,7 +156,7 @@ SELECT Row_number()
 		   LEFT JOIN #Consignment
                   ON ITEMLOC.ITEM = #Consignment.ITEM
 	WHERE DimLocation.BlueBinFlag = 1
-	and ITEMLOC.ITEM = '1915' order by LocationID,ItemID
+	order by LocationID,ItemID
 	
 /*****************************************		DROP Temp Tables	**************************************/
 

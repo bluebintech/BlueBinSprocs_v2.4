@@ -1,11 +1,13 @@
+--*****************************************************
+--**************************SPROC**********************
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectQCNType') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectQCNType
 GO
 
---exec sp_SelectQCNType 
+--exec sp_SelectQCNType ''
 
 CREATE PROCEDURE sp_SelectQCNType
-
+@Active varchar(1)
 --WITH ENCRYPTION
 AS
 BEGIN
@@ -22,7 +24,7 @@ SET NOCOUNT ON
 	LastUpdated 
 	
 	FROM qcn.[QCNType]
-
+	where Active like '%' + @Active + '%'
 END
 GO
 grant exec on sp_SelectQCNType to appusers

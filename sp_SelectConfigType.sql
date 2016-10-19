@@ -1,3 +1,7 @@
+--*****************************************************
+--**************************SPROC**********************
+
+
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectConfigType') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectConfigType
 GO
@@ -19,7 +23,8 @@ SET NOCOUNT ON
 	('Reports'),
 	('DMS'),
 	('Interface'),
-	('Other')
+	('Other'),
+	('TimeStudy')
 
 	SELECT * from @ConfigType order by 1 asc
 	
