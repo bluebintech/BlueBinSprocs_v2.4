@@ -18,8 +18,7 @@ AS
 BEGIN
 SET NOCOUNT ON
 	
-UPDATE bluebin.[TimeStudyGroup] 
-set Active = 0, LastUpdated = getdate()
+Delete from bluebin.[TimeStudyGroup] 
 WHERE [TimeStudyGroupID] = @TimeStudyGroupID 
 				
 

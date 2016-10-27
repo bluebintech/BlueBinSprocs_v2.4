@@ -1,3 +1,6 @@
+--*****************************************************
+--**************************SPROC**********************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertGembaAuditNode') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_InsertGembaAuditNode
 GO
@@ -5,8 +8,9 @@ GO
 --exec sp_InsertGembaAuditNode 'TEST'
 
 CREATE PROCEDURE sp_InsertGembaAuditNode
+@Facility int,
 @Location varchar(10),
-LOWER(@Auditer) varchar(255),
+@Auditer varchar(255),
 @AdditionalComments varchar(max),
 @PS_EmptyBins int,
 @PS_BackBins int,
@@ -52,6 +56,7 @@ declare @GembaAuditNodeID int
 Insert into [gemba].[GembaAuditNode]
 (
 	Date,
+	FacilityID,
 	LocationID,
 	AuditerUserID,
 	AdditionalComments,
@@ -91,6 +96,7 @@ Insert into [gemba].[GembaAuditNode]
 VALUES 
 (
 getdate(),  --Date
+@Facility,
 @Location,
 (select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@Auditer)),
 @AdditionalComments,

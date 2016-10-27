@@ -137,7 +137,7 @@ FROM   dbo.IN_DEMAND Picks
 		ON Picks.INV_ITEM_ID = FirstScans.ItemID AND Picks.LOCATION = FirstScans.LocationID
 WHERE  (LEFT(LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
 		or LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
-       AND CANCEL_DTTM IS NULL
+       AND (CANCEL_DTTM IS NULL  or CANCEL_DTTM < '1900-01-02')
 	   AND DEMAND_DATE >= FirstScanDate)
 	   
 	   ,

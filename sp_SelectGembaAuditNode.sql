@@ -1,8 +1,14 @@
+--*****************************************************
+--**************************SPROC**********************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNode') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectGembaAuditNode
 GO
 
+--exec sp_SelectGembaAuditNode '%','%','%'
+
 CREATE PROCEDURE sp_SelectGembaAuditNode
+@FacilityName varchar(50),
 @LocationName varchar(50),
 @Auditer varchar(50)
 
@@ -13,6 +19,7 @@ SET NOCOUNT ON
     select 
 	q.Date,
     q.[GembaAuditNodeID],
+	df.FacilityName,
 	case
 		when dl.LocationID = dl.LocationName then dl.LocationID
 		else dl.LocationID + ' - ' + dl.[LocationName] end as LocationName,
@@ -27,9 +34,11 @@ SET NOCOUNT ON
     case when q.AdditionalComments ='' then 'No' else 'Yes' end [Addtl Comments],
     q.LastUpdated
 from [gemba].[GembaAuditNode] q
+inner join bluebin.DimFacility df on q.FacilityID = df.FacilityID
 inner join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and dl.BlueBinFlag = 1
 inner join [bluebin].[BlueBinUser] u on q.AuditerUserID = u.BlueBinUserID
     Where q.Active = 1 
+	and df.[FacilityName] LIKE '%' + @FacilityName + '%' 
 	and dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' 
 	and u.LastName + ', ' + u.FirstName LIKE '%' + @Auditer + '%'
 	order by q.Date desc

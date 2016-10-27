@@ -1,3 +1,6 @@
+--*****************************************************
+--**************************SPROC**********************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditGembaAuditNode') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_EditGembaAuditNode
 GO
@@ -6,6 +9,7 @@ GO
 
 CREATE PROCEDURE sp_EditGembaAuditNode
 @GembaAuditNodeID int,
+@Facility int,
 @Location varchar(10),
 @AdditionalComments varchar(max),
 @PS_EmptyBins int,
@@ -39,7 +43,7 @@ CREATE PROCEDURE sp_EditGembaAuditNode
 @SS_TotalScore int,
 @NIS_TotalScore int,
 @TotalScore int
-			,LOWER(@Auditer) varchar(255),@ImageSourceIDPH int
+			,@Auditer varchar(255),@ImageSourceIDPH int
 
 
 --WITH ENCRYPTION
@@ -48,7 +52,8 @@ BEGIN
 SET NOCOUNT ON
 Update [gemba].[GembaAuditNode] SET
 
-           [LocationID] = @Location
+           [FacilityID] = @Facility
+		   ,[LocationID] = @Location
            ,[AdditionalComments] = @AdditionalComments
            ,[PS_EmptyBins] = @PS_EmptyBins
            ,[PS_BackBins] = @PS_BackBins

@@ -42,9 +42,9 @@ GO
 if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-Time Study%')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
-('OP-Time Study Averages','0',1,getdate(),'Reports','Setting for whether to display the Time Study Averages'),
-('OP-Time Study Location Times','0',1,getdate(),'Reports','Setting for whether to display the Time Study Location Times for Orders'),
-('OP-Time Study FTE Planner','0',1,getdate(),'Reports','Setting for whether to display the Time Study FTE Planner'),
+('OP-Time Study Activity Times','0',1,getdate(),'Reports','Setting for whether to display the Time Study Activity Times'),
+('OP-Time Study Averages','0',1,getdate(),'Reports','Setting for whether to display the Time Study Averages Times for Orders'),
+('OP-Time Study Planner','0',1,getdate(),'Reports','Setting for whether to display the Time Study FTE Planner'),
 ('OP-Time Study Dashboard','0',1,getdate(),'Reports','Setting for whether to display the Time Study Dashboard (Detail)')
 END
 
@@ -636,6 +636,7 @@ GO
 
 
 
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -644,7 +645,7 @@ drop procedure sp_SelectTimeStudyGroup
 GO
 
 --select * from bluebin.TimeStudyGroup
---exec sp_SelectTimeStudyGroup 
+--exec sp_SelectTimeStudyGroup '%','%','%'
 
 CREATE PROCEDURE sp_SelectTimeStudyGroup
 @FacilityName varchar(50)
@@ -657,12 +658,12 @@ BEGIN
 SET NOCOUNT ON
 
 select
+t.TimeStudyGroupID,
 df.FacilityName,
 dl.LocationID,
 dl.LocationName,
 t.GroupName,
-t.Active,
-t.LastUpdated,
+t.LastUpdated as DateCreated,
 t.Description
 
 FROM bluebin.TimeStudyGroup t
@@ -677,6 +678,41 @@ END
 GO
 grant exec on sp_SelectTimeStudyGroup to appusers
 GO
+
+
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyGroupNames') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyGroupNames
+GO
+
+--select * from bluebin.TimeStudyGroup
+--exec sp_SelectTimeStudyGroupNames
+
+CREATE PROCEDURE sp_SelectTimeStudyGroupNames
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+select
+distinct
+t.GroupName
+
+FROM bluebin.TimeStudyGroup t
+
+
+END
+GO
+grant exec on sp_SelectTimeStudyGroupNames to appusers
+GO
+
 
 
 
@@ -1498,6 +1534,7 @@ GO
 
 
 
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -1517,8 +1554,7 @@ AS
 BEGIN
 SET NOCOUNT ON
 	
-UPDATE bluebin.[TimeStudyGroup] 
-set Active = 0, LastUpdated = getdate()
+Delete from bluebin.[TimeStudyGroup] 
 WHERE [TimeStudyGroupID] = @TimeStudyGroupID 
 				
 
@@ -1526,7 +1562,6 @@ END
 GO
 grant exec on sp_DeleteTimeStudyGroup to appusers
 GO
-
 
 
 --*****************************************************

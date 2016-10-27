@@ -14,7 +14,8 @@ GO
 CREATE PROCEDURE tb_TimeStudyAverages
 
 AS
-
+BEGIN
+SET NOCOUNT ON
 
 declare @TodaysOrders TABLE ([Date] datetime,FacilityID int,FacilityName varchar(50),LocationID varchar(10),LocationName varchar(50),TodaysLines int)
 declare @TodaysPicks TABLE ([Date] datetime,FacilityID int,FacilityName varchar(50),LocationID varchar(10),LocationName varchar(50),Picks int)
@@ -142,7 +143,7 @@ left join @Groups g on t.FacilityID = g.FacilityID and t.LocationID = g.Location
 
 order by FacilityID,LocationID
 
-
+END
 GO
 
 grant exec on tb_TimeStudyAverages to public

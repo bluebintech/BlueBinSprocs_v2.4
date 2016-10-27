@@ -1,4 +1,3 @@
-
 --*****************************************************
 --**************************SPROC**********************
 
@@ -7,7 +6,7 @@ drop procedure sp_SelectTimeStudyGroup
 GO
 
 --select * from bluebin.TimeStudyGroup
---exec sp_SelectTimeStudyGroup 
+--exec sp_SelectTimeStudyGroup '%','%','%'
 
 CREATE PROCEDURE sp_SelectTimeStudyGroup
 @FacilityName varchar(50)
@@ -20,12 +19,12 @@ BEGIN
 SET NOCOUNT ON
 
 select
+t.TimeStudyGroupID,
 df.FacilityName,
 dl.LocationID,
 dl.LocationName,
 t.GroupName,
-t.Active,
-t.LastUpdated,
+t.LastUpdated as DateCreated,
 t.Description
 
 FROM bluebin.TimeStudyGroup t
@@ -40,7 +39,4 @@ END
 GO
 grant exec on sp_SelectTimeStudyGroup to appusers
 GO
-
-
-
 

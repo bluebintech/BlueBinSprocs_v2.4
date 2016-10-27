@@ -56,7 +56,7 @@ from  [bluebin].[DimLocation] dl
         --left join [bluebin].[DimLocation] dl on g.LocationID = dl.LocationID and dl.BlueBinFlag = 1
 		left join [bluebin].[BlueBinUser] u on g.AuditerUserID = u.BlueBinUserID
 		left join bluebin.BlueBinRoles bbr on u.RoleID = bbr.RoleID
-		left join bluebin.DimFacility df on dl.LocationFacility = df.FacilityID
+		left join bluebin.DimFacility df on g.FacilityID = df.FacilityID
 WHERE dl.BlueBinFlag = 1 and g.Active = 1
             order by dl.LocationID,[Date] asc
 

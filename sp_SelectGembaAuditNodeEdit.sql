@@ -1,3 +1,6 @@
+--*****************************************************
+--**************************SPROC**********************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNodeEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectGembaAuditNodeEdit
 GO
@@ -14,6 +17,7 @@ SET NOCOUNT ON
 select
 		a.[GembaAuditNodeID]
 		,convert(varchar,a.[Date],101) as [Date]
+		,rtrim([FacilityID]) as FacilityID
 		,rtrim([LocationID]) as LocationID
 		,b1.UserLogin as Auditer
 		,a.[AdditionalComments]

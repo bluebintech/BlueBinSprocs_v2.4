@@ -73,42 +73,47 @@ Print 'Schema Updates Complete'
 --*************************************************************************************************************************************************
 --2.4
 
+--Updating Gemba Audit Node to have Facility
+if not exists(select * from sys.columns where name = 'FacilityID' and object_id = (select object_id from sys.tables where name = 'GembaAuditNode'))
+BEGIN
+ALTER TABLE gemba.GembaAuditNode ADD [FacilityID] int;
+END
+GO
+
+if exists(select * from gemba.GembaAuditNode where FacilityID is null)
+BEGIN
+Update gemba.GembaAuditNode set FacilityID = a.F from (select LocationID as L,LocationFacility as F from bluebin.DimLocation) a
+where LocationID = a.L and FacilityID is null
+END
+GO
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_DeleteGembaAuditStage') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_DeleteGembaAuditStage
+GO
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditGembaAuditStage') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_EditGembaAuditStage
+GO
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditStage') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectGembaAuditStage
+GO
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditStageEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectGembaAuditStageEdit
+GO
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertGembaAuditStage') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_InsertGembaAuditStage
+GO
+if exists (select * from sys.tables where name = 'GembaAuditStage')
+BEGIN
+drop table [gemba].[GembaAuditStage]
+END
+GO
+
 --*********************************************************************************************************************
 --*********************************************************************************************************************
 --PRODUCTIVITY MODULE CREATION
 --*********************************************************************************************************************
 --*********************************************************************************************************************
 
-
-if not exists(select * from bluebin.Config where ConfigName like 'MENU-PP-Observation')  
-BEGIN
-insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
-('MENU-PP-Observation','1','DMS',1,getdate(),'Productivity Planner Module Observations Sub Module is viewable.')
-END
-GO
-
-if not exists(select * from bluebin.Config where ConfigName like 'MENU-PP-ServiceTimes')  
-BEGIN
-insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
-('MENU-PP-ServiceTimes','1','DMS',1,getdate(),'Productivity Planner Module Service Times Sub Module is viewable.')
-END
-GO
-
-if not exists(select * from bluebin.Config where ConfigName like 'MENU-PP-StockOutP')  
-BEGIN
-insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
-('MENU-PP-StockOutP','1','DMS',1,getdate(),'Productivity Planner Module Observations Sub Module is viewable.')
-END
-GO
-
-
---*************************************************************************************************************************************
---*************************************************************************************************************************************
-
---Config Stuff
-
---*************************************************************************************************************************************
---*************************************************************************************************************************************
 /*Time Study */
 if not exists(select * from etl.JobSteps where StepName = 'FactActivityTimes')  
 BEGIN
@@ -143,12 +148,14 @@ select 'MENU-TimeStudy','0',1,getdate(),'DMS','Time Study Modules are available 
 END
 GO
 
-if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-Activity%')  
+
+if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-Time Study%')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
-('OP-Activity Times','0',1,getdate(),'Reports','Setting for whether to display the Time Study Activity Times'),
-('OP-Activity Averages','0',1,getdate(),'Reports','Setting for whether to display the Time Study Averages for Nodes'),
-('OP-Activity Planner','0',1,getdate(),'Reports','Setting for whether to display the Time Study Overview Dashboard (Detail)')
+('OP-Time Study Activity Times','0',1,getdate(),'Reports','Setting for whether to display the Time Study Activity Times'),
+('OP-Time Study Averages','0',1,getdate(),'Reports','Setting for whether to display the Time Study Averages Times for Orders'),
+('OP-Time Study Planner','0',1,getdate(),'Reports','Setting for whether to display the Time Study FTE Planner'),
+('OP-Time Study Dashboard','0',1,getdate(),'Reports','Setting for whether to display the Time Study Dashboard (Detail)')
 END
 
 
@@ -167,6 +174,8 @@ GO
 
 if not exists(select * from bluebin.Config where ConfigName like 'Node Service')  
 BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Node Service','Travel Back to Stage','TimeStudy',1,getdate(),'Time to go from Node back to Stage Area')
 insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
 ('Node Service','Leave Stage to enter node','TimeStudy',1,getdate(),'Leave Stage to enter node')
 insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
@@ -191,17 +200,53 @@ insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated
 END
 GO
 
-if not exists(select * from bluebin.Config where ConfigName like 'Returns Bin Large')  
+
+if not exists(select * from bluebin.Config where ConfigName like 'Storeroom Pick Lines')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
-('Returns Bins Large','2.30','TimeStudy',1,getdate(),'Average Time to Returns Bin Large based on Returns Bins Threshold (Greater)')
+('Storeroom Pick Lines','25','TimeStudy',1,getdate(),'Avg Time to Pick an Order in Storeroom in seconds')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName like 'Scanning Bin')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Scanning Bin','1.5','TimeStudy',1,getdate(),'Average Time to Scan each Bin in seconds')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName like 'Scanning Time')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Scanning Time','1.1','TimeStudy',1,getdate(),'Average Time to Scan Bins in minutes')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName like 'Scan New Node')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Scan New Node','1','TimeStudy',1,getdate(),'Average Time to Scan a New Node in minutes')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName like 'Scanning Move')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Scanning Move','.75','TimeStudy',1,getdate(),'Average Time to move computer on wheels between nodes in minutes')
 END
 GO
 
 if not exists(select * from bluebin.Config where ConfigName like 'Returns Bin Small')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
-('Returns Bins Small','1.86','TimeStudy',1,getdate(),'Average Time to Returns Bin Small based on Returns Bins Threshold (Less)')
+('Returns Bins Small','1.86','TimeStudy',1,getdate(),'Average Time to Returns Bin Small based on Returns Bins Threshold (Less) minutes')
+END
+GO
+
+if not exists(select * from bluebin.Config where ConfigName like 'Returns Bin Large')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('Returns Bin Large','2.30','TimeStudy',1,getdate(),'Average Time to Returns Bin Large based on Returns Bins Threshold (Greater) minutes')
 END
 GO
 
@@ -218,6 +263,18 @@ insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType
 select 'Efficiency Factor','.75','1',getdate(),'TimeStudy','Set Productivity Planner Efficiency Factor for FTE Equivalent calculations. Default-.75'
 END
 GO
+
+
+
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
+--Config Stuff
+
+--*************************************************************************************************************************************
+--*************************************************************************************************************************************
+
 
 /* PEOPLESOFT CONFIGS*/
 if not exists(select * from bluebin.Config where ConfigName = 'ClientERP')  
@@ -249,6 +306,13 @@ END
 GO
 
 /*  */
+
+if not exists(select * from bluebin.Config where ConfigName = 'QCN-Bulk CompleteC')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'QCN-Bulk CompleteC','0','1',getdate(),'DMS','Allow the Bulk Complete column and button to show in QCN'
+END
+GO
 
 
 if not exists(select * from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy')  
@@ -1266,49 +1330,7 @@ GO
 --REFERENCES [gemba].[GembaAuditNode] ([GembaAuditNodeID])
 
 
---*****************************************************
---**************************NEWTABLE**********************
 
-if not exists (select * from sys.tables where name = 'GembaAuditStage')
-BEGIN
-CREATE TABLE [gemba].[GembaAuditStage](
-	[GembaAuditStageID] INT NOT NULL IDENTITY(1,1)  PRIMARY KEY,
-	[Date] datetime not null,
-	[AuditerUserID]  int NOT NULL,
-	[KanbansFilled]  int NOT NULL,
-	[KanbansFilledText]  varchar(max) NULL,
-	[LeftBehind]  int NOT NULL,
-	[FollowUpDistrib]  int NOT NULL,
-	[FollowUpDistribText]  varchar(max) NULL,
-	[Concerns]  varchar(max) NULL,
-	[DirectOrderBins]  int NOT NULL,
-	[OldestBin]  datetime NOT NULL,
-	[CheckOpenOrders]  int NOT NULL,
-	[CheckOpenOrdersText]  varchar(max) NULL,
-	[HowManyLate]  int NOT NULL,
-	[FollowUpBuyers]  int NOT NULL,
-	[FollowUpBuyersText]  varchar(max) NULL,
-	[UpdatedStatusTag]  int NOT NULL,
-	[UpdatedStatusTagText]  varchar(max) NULL,
-	[ReqsSubmitted]  int NULL,
-	[ReqsSubmittedText]  varchar(max) NULL,
-	[BinsInOrder]  int NULL,
-	[BinsInOrderText]  varchar(max) NULL,
-	[AreaNeatTidy]  int NULL,
-	[AreaNeatTidyText]  varchar(max) NULL,
-	[CartsClean]  int NULL,
-	[CartsCleanText]  varchar(max) NULL,
-	[AdditionalComments] varchar(max) NULL,
-	[Active] int not null,
-	[LastUpdated] datetime not null
-
-)
-
-ALTER TABLE [gemba].[GembaAuditStage] WITH CHECK ADD FOREIGN KEY([AuditerUserID])
-REFERENCES [bluebin].[BlueBinUser] ([BlueBinUserID])
-
-END
-GO
 
 --*****************************************************
 --**************************NEWTABLE**********************
@@ -2986,25 +3008,8 @@ GO
 grant exec on sp_DeleteGembaAuditNode to appusers
 GO
 
---*****************************************************
---**************************SPROC**********************
-if exists (select * from dbo.sysobjects where id = object_id(N'sp_DeleteGembaAuditStage') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure sp_DeleteGembaAuditStage
-GO
 
-CREATE PROCEDURE sp_DeleteGembaAuditStage
-@GembaAuditStageID int
 
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-Update [gemba].[GembaAuditStage] set Active = 0, LastUpdated = getdate() where GembaAuditStageID = @GembaAuditStageID  
-
-END
-GO
-grant exec on sp_DeleteGembaAuditStage to appusers
-GO
 
 
 --*****************************************************
@@ -3148,81 +3153,6 @@ GO
 grant exec on sp_EditConfig to appusers
 GO
 
-
-
---*****************************************************
---**************************SPROC**********************
-if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditGembaAuditStage') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure sp_EditGembaAuditStage
-GO
-
---exec sp_EditGembaAuditStage 'TEST'
-
-CREATE PROCEDURE sp_EditGembaAuditStage
-	@GembaAuditStageID int,
-	@KanbansFilled int,
-	@KanbansFilledText varchar(max),
-	@LeftBehind int,
-	@FollowUpDistrib int,
-	@FollowUpDistribText varchar(max),
-	@Concerns varchar(max),
-	@DirectOrderBins int,
-	@OldestBin datetime,
-	@CheckedOpenOrders int,
-	@CheckedOpenOrdersText varchar(max),
-	@HowManyLate int,
-	@FollowUpBuyers int,
-	@FollowUpBuyersText varchar(max),
-	@UpdatedStatusTag int,
-	@UpdatedStatusTagText varchar(max),
-	@ReqsSubmitted int,
-	@ReqsSubmittedText varchar(max),
-	@BinsInOrder int,
-	@BinsInOrderText varchar(max),
-	@AreaNeatTidy int,
-	@AreaNeatTidyText varchar(max),
-	@CartsClean int,
-	@CartsCleanText varchar(max),
-	@AdditionalCommentsText varchar(max)
-
-
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-Update [gemba].[GembaAuditStage] Set
-
-	[KanbansFilled] = @KanbansFilled,
-	[KanbansFilledText] = @KanbansFilledText,
-	[LeftBehind] = @LeftBehind,
-	[FollowUpDistrib] = @FollowUpDistrib,
-	[FollowUpDistribText] = @FollowUpDistribText,
-	[Concerns] = @Concerns,
-	[DirectOrderBins] = @DirectOrderBins,
-	[OldestBin] = @OldestBin,
-	[CheckOpenOrders] = @CheckedOpenOrders,
-	[CheckOpenOrdersText] = @CheckedOpenOrdersText,
-	[HowManyLate] = @HowManyLate,
-	[FollowUpBuyers] = @FollowUpBuyers,
-	[FollowUpBuyersText] = @FollowUpBuyersText,
-	[UpdatedStatusTag] = @UpdatedStatusTag,
-	[UpdatedStatusTagText] = @UpdatedStatusTagText,
-	[ReqsSubmitted] = @ReqsSubmitted,
-	[ReqsSubmittedText] = @ReqsSubmittedText,
-	[BinsInOrder] = @BinsInOrder,
-	[BinsInOrderText] = @BinsInOrderText,
-	[AreaNeatTidy] = @AreaNeatTidy,
-	[AreaNeatTidyText] = @AreaNeatTidyText,
-	[CartsClean] = @CartsClean,
-	[CartsCleanText] = @CartsCleanText,
-	[AdditionalComments] = @AdditionalCommentsText,
-    [LastUpdated] = getdate()
-	Where [GembaAuditStageID] = @GembaAuditStageID	
-
-END
-GO
-grant exec on sp_EditGembaAuditStage to appusers
-GO
 
 
 --*****************************************************
@@ -3615,11 +3545,15 @@ GO
 
 --*****************************************************
 --**************************SPROC**********************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNode') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectGembaAuditNode
 GO
 
+--exec sp_SelectGembaAuditNode '%','%','%'
+
 CREATE PROCEDURE sp_SelectGembaAuditNode
+@FacilityName varchar(50),
 @LocationName varchar(50),
 @Auditer varchar(50)
 
@@ -3630,7 +3564,10 @@ SET NOCOUNT ON
     select 
 	q.Date,
     q.[GembaAuditNodeID],
-	dl.LocationID + ' - ' + dl.[LocationName] as LocationName,
+	df.FacilityName,
+	case
+		when dl.LocationID = dl.LocationName then dl.LocationID
+		else dl.LocationID + ' - ' + dl.[LocationName] end as LocationName,
 	u.LastName + ', ' + u.FirstName as Auditer,
     u.UserLogin as AuditerLogin,
     q.PS_TotalScore as [Pull Score],
@@ -3642,9 +3579,11 @@ SET NOCOUNT ON
     case when q.AdditionalComments ='' then 'No' else 'Yes' end [Addtl Comments],
     q.LastUpdated
 from [gemba].[GembaAuditNode] q
+inner join bluebin.DimFacility df on q.FacilityID = df.FacilityID
 inner join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and dl.BlueBinFlag = 1
 inner join [bluebin].[BlueBinUser] u on q.AuditerUserID = u.BlueBinUserID
     Where q.Active = 1 
+	and df.[FacilityName] LIKE '%' + @FacilityName + '%' 
 	and dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' 
 	and u.LastName + ', ' + u.FirstName LIKE '%' + @Auditer + '%'
 	order by q.Date desc
@@ -3658,6 +3597,7 @@ GO
 
 --*****************************************************
 --**************************SPROC**********************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNodeEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectGembaAuditNodeEdit
 GO
@@ -3674,8 +3614,9 @@ SET NOCOUNT ON
 select
 		a.[GembaAuditNodeID]
 		,convert(varchar,a.[Date],101) as [Date]
+		,rtrim([FacilityID]) as FacilityID
 		,rtrim([LocationID]) as LocationID
-		,LOWER(b1.UserLogin) as Auditer
+		,b1.UserLogin as Auditer
 		,a.[AdditionalComments]
 		,a.[PS_EmptyBins]
 		,a.[PS_BackBins]
@@ -3717,100 +3658,6 @@ select
 END
 GO
 grant exec on sp_SelectGembaAuditNodeEdit to appusers
-GO
-
-
---*****************************************************
---**************************SPROC**********************
-if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditStage') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure sp_SelectGembaAuditStage
-GO
-
-
---exec sp_SelectGembaAuditStage
-CREATE PROCEDURE sp_SelectGembaAuditStage
-
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-SELECT 
-      a.[GembaAuditStageID]
-      ,a.[Date]
-      ,b.LastName + ', ' + b.FirstName as Auditer
-      ,LOWER(b.UserLogin) as AuditerLogin
-      ,a.[OldestBin]
-      ,case when a.[KanbansFilled] = 1 then 'Yes' else 'No' end [KanbansFilled]
-      ,case when a.[ReqsSubmitted] = 3 then 'Need' when a.[ReqsSubmitted] = 0 then 'No' else 'Yes' end [ReqsSubmitted]
-      ,case when a.[BinsInOrder] = 3 then 'Need' when a.[BinsInOrder] = 0 then 'No'  else 'Yes' end [BinsInOrder]
-      ,case when a.[AreaNeatTidy] = 3 then 'Need' when a.[AreaNeatTidy] = 0 then 'No'  else 'Yes' end [AreaNeatTidy]
-      ,case when a.[CartsClean] = 3 then 'Need' when a.[CartsClean] = 0 then 'No'  else 'Yes' end [CartsClean]
-      ,a.[AdditionalComments] as AdditionalCommentsStageText 
-      ,case when a.[AdditionalComments] = '' then 'None' else 'Yes' end [AdditionalCommentsStage]
-	  ,a.Concerns as ConcernsText
-     ,case when a.[Concerns] = '' then 'None' else 'Yes' end [Concerns],
-      a.LastUpdated
-  FROM [gemba].[GembaAuditStage] a
-  inner join bluebin.BlueBinUser b on a.AuditerUserID = b.BlueBinUserID WHERE a.Active = 1 order by a.[Date] desc
-
-END
-GO
-grant exec on sp_SelectGembaAuditStage to appusers
-GO
-
-
---*****************************************************
---**************************SPROC**********************
-if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditStageEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure sp_SelectGembaAuditStageEdit
-GO
-
---exec sp_SelectGembaAuditStageEdit 'TEST'
-
-CREATE PROCEDURE sp_SelectGembaAuditStageEdit
-@GembaAuditStageID int
-
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-
-select 
-    a.GembaAuditStageID
-    , convert(varchar,a.[Date],101) as [Date]
-    ,LOWER(b.UserLogin) as Auditer
-    ,a.[KanbansFilled]
-    ,a.[KanbansFilledText]
-    ,a.[LeftBehind]
-    ,a.[FollowUpDistrib]
-    ,a.[FollowUpDistribText]
-    ,a.[Concerns]
-    ,a.[DirectOrderBins]
-    ,convert(varchar,a.[OldestBin],101) as OldestBin
-    ,a.[CheckOpenOrders]
-    ,a.[CheckOpenOrdersText]
-    ,a.[HowManyLate]
-    ,a.[FollowUpBuyers]
-    ,a.[FollowUpBuyersText]
-    ,a.[UpdatedStatusTag]
-    ,a.[UpdatedStatusTagText]
-    ,a.[ReqsSubmitted]
-    ,a.[ReqsSubmittedText]
-    ,a.[BinsInOrder]
-    ,a.[BinsInOrderText]
-    ,a.[AreaNeatTidy]
-    ,a.[AreaNeatTidyText]
-    ,a.[CartsClean]
-    ,a.[CartsCleanText]
-    ,a.[AdditionalComments]
-    , convert(varchar,a.[LastUpdated],101) as [LastUpdated]
-from gemba.GembaAuditStage a 
-	inner join bluebin.BlueBinUser b on a.[AuditerUserID] = b.BlueBinUserID
-where 
-	a.GembaAuditStageID=@GembaAuditStageID
-END
-GO
-grant exec on sp_SelectGembaAuditStageEdit to appusers
 GO
 
 
@@ -4726,7 +4573,6 @@ GO
 --*****************************************************
 --**************************SPROC**********************
 
-
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditGembaAuditNode') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_EditGembaAuditNode
 GO
@@ -4735,6 +4581,7 @@ GO
 
 CREATE PROCEDURE sp_EditGembaAuditNode
 @GembaAuditNodeID int,
+@Facility int,
 @Location varchar(10),
 @AdditionalComments varchar(max),
 @PS_EmptyBins int,
@@ -4777,7 +4624,8 @@ BEGIN
 SET NOCOUNT ON
 Update [gemba].[GembaAuditNode] SET
 
-           [LocationID] = @Location
+           [FacilityID] = @Facility
+		   ,[LocationID] = @Location
            ,[AdditionalComments] = @AdditionalComments
            ,[PS_EmptyBins] = @PS_EmptyBins
            ,[PS_BackBins] = @PS_BackBins
@@ -4822,9 +4670,9 @@ set ActionID = @GembaAuditNodeID
 where ActionType = 'Gemba' and 
 		BlueBinUserID = (select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@Auditer)) and 
 			ActionID = (select convert(int,(convert(varchar,(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@Auditer)))+convert(varchar,@ImageSourceIDPH))))
---if exists(select * from bluebin.[Image] where ImageSourceID = (select convert(int,(convert(varchar,(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@UserLogin)))+convert(varchar,@ImageSourceIDPH))))
+--if exists(select * from bluebin.[Image] where ImageSourceID = (select convert(int,(convert(varchar,(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = @UserLogin))+convert(varchar,@ImageSourceIDPH))))
 --	BEGIN
---	update [bluebin].[Image] set ImageSourceID = @GembaAuditNodeID where ImageSourceID = (select convert(int,(convert(varchar,(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@UserLogin)))+convert(varchar,@ImageSourceIDPH))))
+--	update [bluebin].[Image] set ImageSourceID = @GembaAuditNodeID where ImageSourceID = (select convert(int,(convert(varchar,(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = @UserLogin))+convert(varchar,@ImageSourceIDPH))))
 --	END
 END
 GO
@@ -4842,6 +4690,7 @@ GO
 --exec sp_InsertGembaAuditNode 'TEST'
 
 CREATE PROCEDURE sp_InsertGembaAuditNode
+@Facility int,
 @Location varchar(10),
 @Auditer varchar(255),
 @AdditionalComments varchar(max),
@@ -4889,6 +4738,7 @@ declare @GembaAuditNodeID int
 Insert into [gemba].[GembaAuditNode]
 (
 	Date,
+	FacilityID,
 	LocationID,
 	AuditerUserID,
 	AdditionalComments,
@@ -4928,6 +4778,7 @@ Insert into [gemba].[GembaAuditNode]
 VALUES 
 (
 getdate(),  --Date
+@Facility,
 @Location,
 (select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@Auditer)),
 @AdditionalComments,
@@ -4976,9 +4827,9 @@ set ActionID = @GembaAuditNodeID
 where ActionType = 'Gemba' and 
 		BlueBinUserID = (select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@Auditer)) and 
 			ActionID = (select convert(int,(convert(varchar,(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@Auditer)))+convert(varchar,@ImageSourceIDPH))))
---if exists(select * from bluebin.[Image] where ImageSourceID = (select convert(int,(convert(varchar,(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@UserLogin)))+convert(varchar,@ImageSourceIDPH))))
+--if exists(select * from bluebin.[Image] where ImageSourceID = (select convert(int,(convert(varchar,(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = @UserLogin))+convert(varchar,@ImageSourceIDPH))))
 --	BEGIN
---	update [bluebin].[Image] set ImageSourceID = @GembaAuditNodeID where ImageSourceID = (select convert(int,(convert(varchar,(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@UserLogin)))+convert(varchar,@ImageSourceIDPH))))
+--	update [bluebin].[Image] set ImageSourceID = @GembaAuditNodeID where ImageSourceID = (select convert(int,(convert(varchar,(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = @UserLogin))+convert(varchar,@ImageSourceIDPH))))
 --	END
 
 END
@@ -4986,119 +4837,6 @@ GO
 grant exec on sp_InsertGembaAuditNode to appusers
 GO
 
-
---*****************************************************
---**************************SPROC**********************
-
-if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertGembaAuditStage') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure sp_InsertGembaAuditStage
-GO
-
---exec sp_InsertGembaAuditStage 'TEST'
-
-CREATE PROCEDURE sp_InsertGembaAuditStage
-	@Auditer varchar(255),
-	@KanbansFilled int,
-	@KanbansFilledText varchar(max),
-	@LeftBehind int,
-	@FollowUpDistrib int,
-	@FollowUpDistribText varchar(max),
-	@Concerns varchar(max),
-	@DirectOrderBins int,
-	@OldestBin datetime,
-	@CheckedOpenOrders int,
-	@CheckedOpenOrdersText varchar(max),
-	@HowManyLate int,
-	@FollowUpBuyers int,
-	@FollowUpBuyersText varchar(max),
-	@UpdatedStatusTag int,
-	@UpdatedStatusTagText varchar(max),
-	@ReqsSubmitted int,
-	@ReqsSubmittedText varchar(max),
-	@BinsInOrder int,
-	@BinsInOrderText varchar(max),
-	@AreaNeatTidy int,
-	@AreaNeatTidyText varchar(max),
-	@CartsClean int,
-	@CartsCleanText varchar(max),
-	@AdditionalCommentsText varchar(max)
-
-
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-
-declare @GembaAuditStageID int
-
-insert into [gemba].[GembaAuditStage] (
-    [Date],
-	[AuditerUserID],
-	[KanbansFilled],
-	[KanbansFilledText],
-	[LeftBehind],
-	[FollowUpDistrib],
-	[FollowUpDistribText],
-	[Concerns],
-	[DirectOrderBins],
-	[OldestBin],
-	[CheckOpenOrders],
-	[CheckOpenOrdersText],
-	[HowManyLate],
-	[FollowUpBuyers],
-	[FollowUpBuyersText],
-	[UpdatedStatusTag],
-	[UpdatedStatusTagText],
-	[ReqsSubmitted],
-	[ReqsSubmittedText],
-	[BinsInOrder],
-	[BinsInOrderText],
-	[AreaNeatTidy],
-	[AreaNeatTidyText],
-	[CartsClean],
-	[CartsCleanText],
-	[AdditionalComments],
-	[Active],
-	[LastUpdated]
-)
-VALUES (
-getdate(), --Date
-(select BlueBinUserID from bluebin.BlueBinUser where LOWER(UserLogin) = LOWER(@Auditer)),
-@KanbansFilled,
-@KanbansFilledText,
-@LeftBehind,
-@FollowUpDistrib,
-@FollowUpDistribText,
-@Concerns,
-@DirectOrderBins,
-@OldestBin,
-@CheckedOpenOrders,
-@CheckedOpenOrdersText,
-@HowManyLate,
-@FollowUpBuyers,
-@FollowUpBuyersText,
-@UpdatedStatusTag,
-@UpdatedStatusTagText,
-@ReqsSubmitted,
-@ReqsSubmittedText,
-@BinsInOrder,
-@BinsInOrderText,
-@AreaNeatTidy,
-@AreaNeatTidyText,
-@CartsClean,
-@CartsCleanText,
-@AdditionalCommentsText,
-1, --Active
-getdate())	--Last Updated
-
-	SET @GembaAuditStageID = SCOPE_IDENTITY()
-	exec sp_InsertMasterLog @Auditer,'Gemba','New Gemba Stage Audit',@GembaAuditStageID
-
-
-END
-GO
-grant exec on sp_InsertGembaAuditStage to appusers
-GO
 
 
 --*****************************************************
@@ -6983,12 +6721,45 @@ GO
 --*****************************************************
 --**************************SPROC**********************
 
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyGroupNames') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectTimeStudyGroupNames
+GO
+
+--select * from bluebin.TimeStudyGroup
+--exec sp_SelectTimeStudyGroupNames
+
+CREATE PROCEDURE sp_SelectTimeStudyGroupNames
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+select
+distinct
+t.GroupName
+
+FROM bluebin.TimeStudyGroup t
+
+
+END
+GO
+grant exec on sp_SelectTimeStudyGroupNames to appusers
+GO
+
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectTimeStudyGroup') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectTimeStudyGroup
 GO
 
 --select * from bluebin.TimeStudyGroup
---exec sp_SelectTimeStudyGroup 
+--exec sp_SelectTimeStudyGroup '%','%','%'
 
 CREATE PROCEDURE sp_SelectTimeStudyGroup
 @FacilityName varchar(50)
@@ -7001,12 +6772,12 @@ BEGIN
 SET NOCOUNT ON
 
 select
+t.TimeStudyGroupID,
 df.FacilityName,
 dl.LocationID,
 dl.LocationName,
 t.GroupName,
-t.Active,
-t.LastUpdated,
+t.LastUpdated as DateCreated,
 t.Description
 
 FROM bluebin.TimeStudyGroup t
@@ -7301,6 +7072,123 @@ SET @TimeStudyID = SCOPE_IDENTITY()
 END
 GO
 grant exec on sp_InsertTimeStudyStageScan to appusers
+GO
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectQCNUser') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectQCNUser
+GO
+
+--exec sp_SelectQCNUser
+
+CREATE PROCEDURE sp_SelectQCNUser
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+    SELECT 
+	
+	DISTINCT 
+	u.BlueBinUserID,
+	u.LastName + ', ' + u.FirstName as AssignedUserName 
+	
+	FROM [qcn].[QCN] q 
+	inner join [bluebin].[BlueBinUser] u on AssignedUserID = u.BlueBinUserID 
+	
+	order by 2
+
+
+END
+GO
+grant exec on sp_SelectQCNUser to appusers
+GO
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNodeUser') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectGembaAuditNodeUser
+GO
+
+--exec sp_SelectGembaAuditNodeUser
+
+CREATE PROCEDURE sp_SelectGembaAuditNodeUser
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+    SELECT 
+	
+	DISTINCT 
+	AuditerUserID,
+	u.LastName + ', ' + u.FirstName as Auditer 
+	
+	FROM [gemba].[GembaAuditNode]  
+	inner join [bluebin].[BlueBinUser] u on AuditerUserID = u.BlueBinUserID 
+	
+	order by 2
+END
+GO
+grant exec on sp_SelectGembaAuditNodeUser to appusers
+GO
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNodeLocation') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectGembaAuditNodeLocation
+GO
+
+--exec sp_SelectGembaAuditNodeLocation
+CREATE PROCEDURE sp_SelectGembaAuditNodeLocation
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+select 
+	distinct 
+	q.[LocationID],
+    dl.LocationID + ' - ' + dl.[LocationName] as LocationName
+	from gemba.GembaAuditNode q
+	left join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and dl.BlueBinFlag = 1
+	order by LocationID
+END
+GO
+grant exec on sp_SelectGembaAuditNodeLocation to appusers
+GO
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNodeFacility') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectGembaAuditNodeFacility
+GO
+
+--exec sp_SelectGembaAuditNodeFacility
+CREATE PROCEDURE sp_SelectGembaAuditNodeFacility
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+select 
+	distinct 
+	q.[FacilityID],
+    df.FacilityName as FacilityName
+	from gemba.GembaAuditNode q
+	left join [bluebin].[DimFacility] df on q.FacilityID = df.FacilityID 
+	order by df.FacilityName
+END
+GO
+grant exec on sp_SelectGembaAuditNodeFacility to appusers
 GO
 
 
@@ -7843,6 +7731,7 @@ GO
 
 
 
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -7862,8 +7751,7 @@ AS
 BEGIN
 SET NOCOUNT ON
 	
-UPDATE bluebin.[TimeStudyGroup] 
-set Active = 0, LastUpdated = getdate()
+Delete from bluebin.[TimeStudyGroup] 
 WHERE [TimeStudyGroupID] = @TimeStudyGroupID 
 				
 
@@ -7871,7 +7759,6 @@ END
 GO
 grant exec on sp_DeleteTimeStudyGroup to appusers
 GO
-
 
 
 --*****************************************************
@@ -8676,179 +8563,6 @@ Print 'SSP Sproc Add/Updates Complete'
 --Interface Sproc
 --*************************************************************************************************************************************************
 
-/*
-if exists (select * from dbo.sysobjects where id = object_id(N'xp_RQ500ScanBatchS') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure xp_RQ500ScanBatchS
-GO
-
---exec xp_RQ500ScanBatchS ''
-
-CREATE PROCEDURE xp_RQ500ScanBatchS
-@Facility varchar(4)
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-
---If there is nothing to extract skip to the end
-if not exists(select * from scan.ScanLine where Extract = 1) 
-BEGIN
-GOTO THEEND
-END
-
---Declare all paramters and parameter table
-Declare @RQ500User varchar(100), @RQ500FromLoc varchar(5), @RQ500FromComp varchar(5), @RQ500Account varchar(6), @RQ500SubAccount varchar(4), @RQ500AccountCat varchar(5), @RQ500AccountUnit varchar(15)
-DECLARE @Batch TABLE (iid int identity (1,1) PRIMARY KEY,ScanBatchID int,FacilityID int,LocationID char(7),RQ500User varchar(100),Extract int,ScanDateTime datetime,RQ500FromLoc varchar(5),RQ500FromComp varchar(4))
-declare @iid int, @ScanBatchID int
-
---Set The REQUESTER for the batch to be a generic value in bluebin.Config if set
-select @RQ500User = ConfigValue from bluebin.Config where ConfigName = 'RQ500User'
---Set the From Location for the requisition
-select @RQ500FromLoc = ConfigValue from bluebin.Config where ConfigName = 'RQ500FromLoc'
---Set Company that is the source of the items.
-select @RQ500FromComp = ConfigValue from bluebin.Config where ConfigName = 'RQ500FromComp'
-
---Set The Account for the GL for the PO
-select @RQ500Account = ConfigValue from bluebin.Config where ConfigName = 'RQ500Account'
---Set the Account Category code (used for reporting on ERP)
-select @RQ500AccountCat = ConfigValue from bluebin.Config where ConfigName = 'RQ500AccountCat'
---Set the Posting Account Unit
-select @RQ500AccountUnit = ConfigValue from bluebin.Config where ConfigName = 'RQ500AccountUnit'
---Set the Sub Account for the general ledger for the req
-select @RQ500SubAccount = ConfigValue from bluebin.Config where ConfigName = 'RQ500SubAccount'
-
-
---Create data set of all the Batches that need to be extracted
-insert into @Batch (ScanBatchID,FacilityID,LocationID,RQ500User,ScanDateTime,RQ500FromLoc,RQ500FromComp) 
-select 
-	sb.ScanBatchID,
-	sb.FacilityID,
-	--sb.LocationID,  --Used for real Sprocs
-	REPLACE(sb.LocationID,'BB','DS') as LocationID,--Used for Testing in Demo
-	case 
-		when bu.ERPUser = '' or bu.ERPUser is null then 
-			case when @RQ500User = '' or @RQ500User is null then 'Invalid Requester' else @RQ500User end 
-			else bu.ERPUser end
-			,
-	ScanDateTime,
-	@RQ500FromLoc,
-	@RQ500FromComp
-from scan.ScanBatch sb
-	left join bluebin.BlueBinUser bu on sb.BlueBinUserID = bu.BlueBinUserID 
-where ScanType like '%Order'
-		and sb.ScanBatchID in (select ScanBatchID from scan.ScanLine where Extract = 1)
-			and convert(varchar(4),FacilityID) like '%' + @Facility + '%'
-
-;
-	
-	--Create RQ500 Header out of the ScanBatch
-With C as (
-	select 
-	sb.ScanBatchID,1 as Line,
-	left((
-	'H'+																		--Record Type 1, 1
-	right((REPLICATE('0',4) + rtrim(convert(varchar(4),sb.FacilityID))),4)+		--Company 4, 2-5
-	REPLICATE('0',7)+															--Req Number 7, 6-12
-	REPLICATE('0',6)+															--LineNumber 6, 13-18
-	left(sb.RQ500User+SPACE(10),10)+											--Requester 10, 19-28
-	left(sb.LocationID+SPACE(5),5)+												--Req Location 5, 29-33
-	convert(varchar, sb.ScanDateTime, 112)+										--Req Delete Date 8, 34-41								
-	convert(varchar, sb.ScanDateTime, 112)+										--Creation Date 8, 42-49
-	right((REPLICATE('0',4) + rtrim(convert(varchar(4),rtrim(sb.RQ500FromComp)))),4)+--From Company 4, 50-53
-	left(sb.RQ500FromLoc+SPACE(5),5)+											--From Location 5, 54-58
-	SPACE(76)+																	--76 Spaces, 59-134
-	'N'+																		--Print ReqFI  Should we print Req.  Default to N 1, 135
-	SPACE(87)+																	--87 Spaces, 136-222
-	'01'+																		--Priority 2, 223-224, default it to 01
-	SPACE(16)+																	--16 Spaces, 225-240
-	left(@RQ500AccountCat+SPACE(5),5)+											--Accounting Category 5, 241-245
-	SPACE(32)+																	--32 Spaces, 246-277
-	left(@RQ500AccountUnit+SPACE(15),15)+										--Account Unit 15, 278-292
-	right((REPLICATE('0',6) + @RQ500Account),6)+								--Account 6, 293-298
-	right((REPLICATE('0',4) + @RQ500SubAccount),4)+								--Sub Account 4, 299-302
-	SPACE(320)+																	--320 Spaces, 303-622
-	'1'+																		--One Source One PO, 1, 623.  default it to 1
-	SPACE(115)+																	--115 Spaces, 624-738
-	'A'+																		--FUNCTION CODE, 1, 739.  default it to A
-	SPACE(503)+																	--503 Spaces, 740-1242
-	'00000000'+																	--Default Procedure Date, 8, 1243-1250
-	SPACE(382)+																	--382 Spaces, 1251-1632
-	'00000000'+																	--Default Birthdate, 8, 1633-1640
-	SPACE(2000)																	--Extra Spaces to fill out
-	),2000) as Content
-	from @Batch sb 
-	where sb.RQ500User <> 'Invalid Requester'
-	
-	UNION
-
-	--Create RQ500 Lines out of the ScanLines
-	select 
-	sb.ScanBatchID,Line+1 as Line,
-	left((
-	'L'+																		--Record Type 1, 1
-	right((REPLICATE('0',4) + rtrim(convert(varchar(4),sb.FacilityID))),4)+		--Company 4, 2-5
-	REPLICATE('0',7)+															--Req Number 7, 6-12 
-	right(REPLICATE('0',6)+rtrim(sl.Line),6)+									--LineNumber 6, 13-18
-	left(sl.ItemID+SPACE(32),32)+												--Item 32, 19-50
-	SPACE(1)+																	--ItemType 1, 51
-	SPACE(1)+																	--ServiceCode 1, 52
-	SPACE(30)+																	--Service Code Description 30, 53-82
-	right(REPLICATE('0',9)+rtrim(sl.Qty),9)+REPLICATE('0',4)+					--Quantity decimal 9,4, overall 13, 83-95
-	left(di.StockUOM+SPACE(4),4)+												--Entered UOM 4, 96-99
-	REPLICATE('0',18)+															--Transaction Cost, 100-117
-	SPACE(56)+																	--Space for Override Cst, 56, 118-173Create PO,Agreement,Vendor,VendorLocation,Purchase Classes,Buyer
-	right((REPLICATE('0',4) + rtrim(convert(varchar(4),rtrim(sb.RQ500FromComp)))),4)+		--From Company 4, 174-177
-	left(sb.RQ500FromLoc+SPACE(5),5)+												--From Location 5, 178-182
-	left(sb.LocationID+SPACE(5),5)+												--Req Location 5, 183-187
-	convert(varchar, sb.ScanDateTime, 112)+										--Req Delivery Date 8, 188-195
-	convert(varchar, sb.ScanDateTime+1, 112)+									--Late Delivery Date 8, 196-203
-	SPACE(8)+																	--Creation Date 8, 204-211
-	--convert(varchar, sb.ScanDateTime, 112)+									--Creation Date 8, 204-211
-	SPACE(89)+																	--Spaces 89, 212-300
-	'01'+																		--Priority 2, 301-302, default it to 01
-	SPACE(80)+																	--80 Spaces, 303-382
-	left(@RQ500AccountUnit+SPACE(15),15)+										--Account Unit 15, 383-397
-	right((REPLICATE('0',6) + @RQ500Account),6)+								--Account 6, 398-403
-	right((REPLICATE('0',4) + @RQ500SubAccount),4)+								--Sub Account 4, 404-407
-	SPACE(103)+																	--Spaces 103, 408-510
-	right((REPLICATE('0',4) + rtrim(convert(varchar(4),rtrim(sb.RQ500FromComp)))),4)+--Distribution (From) Company 4, 511-514
-	SPACE(15)+																	--Spaces 15, 515-529
-	left(@RQ500AccountCat+SPACE(5),5)+											--Accounting Category 5, 530-534
-	SPACE(42)+																	--Spaces 42, 535-576
-	'0000000000'+																--Asset Number 10, 577-586 default all zeroes
-	SPACE(27)+																	--Spaces 27,587-613
-	'0'+																		--Strategic Sourcing Event 1, 614. default to 0
-	SPACE(2000)																	--Extra Spaces to fill out	
-	),2000) as Content
-	from @Batch sb
-	inner join scan.ScanLine sl on sb.ScanBatchID = sl.ScanBatchID
-	inner join bluebin.DimItem di on sl.ItemID = di.ItemID
-	where sl.Extract = 1 and sb.RQ500User <> 'Invalid Requester' and sl.Line <> 0 
-	
-	) 
-	select Content from C order by ScanBatchID,Line
-	;
-	update scan.ScanBatch set Extract = 0 where ScanBatchID in (select ScanBatchID from @Batch where RQ500User <> 'Invalid Requester')
-	update scan.ScanLine set Extract = 0 where ScanBatchID  in (select ScanBatchID from @Batch where RQ500User <> 'Invalid Requester')
-THEEND:
-
-/*
-select * from scan.ScanBatch
-select * from scan.ScanLine
-select * from bluebin.DimLocation
-update scan.ScanBatch set Extract = 1 where ScanBatchID in (10,11,12)
-update scan.ScanLine set Extract = 1 where ScanBatchID in (10,11,12)
-exec xp_RQ500ScanBatchS ''
-declare @ScanBatchID int 
-select @ScanBatchID = min(ScanBatchID) from scan.ScanBatch where Active = 1 and Extract = 1
-*/
-
-END
-GO
-
-grant exec on xp_RQ500ScanBatchS to BlueBin_RQ500User
-GO
-*/
 
 Print 'Interface Sproc Updates Complete'
 
@@ -8922,7 +8636,7 @@ Print 'Job Updates Complete'
 
 
 
-declare @version varchar(50) = '2.4.20161014' --Update Version Number here
+declare @version varchar(50) = '2.4.20161021' --Update Version Number here
 
 
 if not exists (select * from bluebin.Config where ConfigName = 'Version')

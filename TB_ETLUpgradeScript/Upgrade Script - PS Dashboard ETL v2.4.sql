@@ -780,7 +780,7 @@ FROM   dbo.IN_DEMAND Picks
 		ON Picks.INV_ITEM_ID = FirstScans.ItemID AND Picks.LOCATION = FirstScans.LocationID
 WHERE  (LEFT(LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
 		or LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
-       AND CANCEL_DTTM IS NULL
+       AND (CANCEL_DTTM IS NULL or CANCEL_DTTM < '1900-01-02')
 	   AND DEMAND_DATE >= FirstScanDate)
 	   
 	   ,
@@ -2480,7 +2480,7 @@ from  [bluebin].[DimLocation] dl
         --left join [bluebin].[DimLocation] dl on g.LocationID = dl.LocationID and dl.BlueBinFlag = 1
 		left join [bluebin].[BlueBinUser] u on g.AuditerUserID = u.BlueBinUserID
 		left join bluebin.BlueBinRoles bbr on u.RoleID = bbr.RoleID
-		left join bluebin.DimFacility df on dl.LocationFacility = df.FacilityID
+		left join bluebin.DimFacility df on g.FacilityID = df.FacilityID
 WHERE dl.BlueBinFlag = 1 and g.Active = 1
             order by dl.LocationID,[Date] asc
 
@@ -2488,7 +2488,6 @@ END
 GO
 grant exec on tb_GembaDashboard to public
 GO
-
 
 
 
