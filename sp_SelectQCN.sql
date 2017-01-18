@@ -39,7 +39,7 @@ select
     ISNULL(v.[Title],'') as AssignedTitleName,
 	qt.Name as QCNType,
 q.[ItemID],
-COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description') as ItemClinicalDescription,
+q.ClinicalDescription as ItemClinicalDescription,
 q.Par,
 q.UOM,
 q.ManuNumName,

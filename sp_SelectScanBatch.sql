@@ -20,9 +20,9 @@ select @ScanDate = case when @ScanDate = 'Today' then convert(varchar,(convert(D
 
 select 
 sb.ScanBatchID,
-rtrim(df.FacilityID) as FacilityID,
+sb.FacilityID as FacilityID,
 df.FacilityName as FacilityName,
-rtrim(sb.LocationID) as LocationID,
+sb.LocationID as LocationID,
 dl.LocationName as LocationName,
 max(sl.Line) as BinsScanned,
 sb.ScanDateTime as [DateScanned],
@@ -55,7 +55,7 @@ and sb.LocationID like '%' + @Location + '%'
 
 group by 
 sb.ScanBatchID,
-df.FacilityID,
+sb.FacilityID,
 df.FacilityName,
 sb.LocationID,
 dl.LocationName,

@@ -135,19 +135,35 @@ Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
 END
 GO
 
+if not exists(select * from bluebin.BlueBinOperations where OpName ='TimeStudy-GroupConfig')  
+BEGIN
+Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
+('TimeStudy-GroupConfig','Give User ability to see Time Study Group Config')
+END
+GO
+
+
 if not exists (select * from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName like 'MENU-TimeStudy%'))
 BEGIN  
 insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy') from bluebin.BlueBinRoles where RoleName like 'BlueBin%'
 insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy-EDIT') from bluebin.BlueBinRoles where RoleName like 'BlueBin%'
+insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebin.BlueBinOperations where OpName ='TimeStudy-GroupConfig') from bluebin.BlueBinRoles where RoleName like 'BlueBin%'
 END
+
+if not exists(select * from bluebin.Config where ConfigName = 'TimeStudy-GroupConfig')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'TimeStudy-GroupConfig','1',1,getdate(),'TimeStudy','Time Study Groups are enabled.  Default=0 (Boolean 0 is No, 1 is Yes)'
+END
+GO
+
 
 if not exists(select * from bluebin.Config where ConfigName = 'MENU-TimeStudy')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
-select 'MENU-TimeStudy','0',1,getdate(),'DMS','Time Study Modules are available for this client. Default=0 (Boolean 0 is No, 1 is Yes)'
+select 'MENU-TimeStudy','0',1,getdate(),'TimeStudy','Time Study Modules are available for this client. Default=0 (Boolean 0 is No, 1 is Yes)'
 END
 GO
-
 
 if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-Time Study%')  
 BEGIN
@@ -236,21 +252,22 @@ insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated
 END
 GO
 
-if not exists(select * from bluebin.Config where ConfigName like 'Returns Bin Small')  
+
+if not exists(select * from bluebin.Config where ConfigName like 'Returns Bins Small')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
 ('Returns Bins Small','1.86','TimeStudy',1,getdate(),'Average Time to Returns Bin Small based on Returns Bins Threshold (Less) minutes')
 END
 GO
 
-if not exists(select * from bluebin.Config where ConfigName like 'Returns Bin Large')  
+if not exists(select * from bluebin.Config where ConfigName like 'Returns Bins Large')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
-('Returns Bin Large','2.30','TimeStudy',1,getdate(),'Average Time to Returns Bin Large based on Returns Bins Threshold (Greater) minutes')
+('Returns Bins Large','2.30','TimeStudy',1,getdate(),'Average Time to Returns Bin Large based on Returns Bins Threshold (Greater) minutes')
 END
 GO
 
-if not exists(select * from bluebin.Config where ConfigName like 'Returns Bin Threshhold')  
+if not exists(select * from bluebin.Config where ConfigName like 'Returns Bins Threshhold')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
 ('Returns Bins Threshhold','8','TimeStudy',1,getdate(),'Threshhold for Returns Bins to go Large (GT) or Small (LT EQ)')
@@ -305,7 +322,22 @@ select 'PS_BUSINESSUNIT','',1,getdate(),'Tableau','Business Unit to Match to for
 END
 GO
 
-/*  */
+if not exists(select * from bluebin.Config where ConfigName = 'PS_POTimeAdjust')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'PS_POTimeAdjust','0',1,getdate(),'Tableau',''
+END
+GO
+
+/* END Peoplesoft COnfigs */
+
+if not exists(select * from bluebin.Config where ConfigName = 'GembaIdentifier')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'GembaIdentifier','',1,getdate(),'DMS','Gemba Identifier value within the MainComments that can single out specific Audits'
+END
+GO
+
 
 if not exists(select * from bluebin.Config where ConfigName = 'QCN-Bulk CompleteC')  
 BEGIN
@@ -313,42 +345,6 @@ insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType
 select 'QCN-Bulk CompleteC','0','1',getdate(),'DMS','Allow the Bulk Complete column and button to show in QCN'
 END
 GO
-
-
-if not exists(select * from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy')  
-BEGIN
-Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
-('MENU-TimeStudy','Give User ability to see Time Study Module and Subs Modules in Ops')
-END
-GO
-
-if not exists(select * from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy-EDIT')  
-BEGIN
-Insert into bluebin.BlueBinOperations (OpName,[Description]) VALUES
-('MENU-TimeStudy-EDIT','Give User ability to see Time Study Module and Subs Modules in Ops and Edit')
-END
-GO
-
-if not exists (select * from bluebin.BlueBinRoleOperations where OpID in (select OpID from bluebin.BlueBinOperations where OpName like 'MENU-TimeStudy%'))
-BEGIN  
-insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy') from bluebin.BlueBinRoles where RoleName like 'BlueBin%'
-insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebin.BlueBinOperations where OpName ='MENU-TimeStudy-EDIT') from bluebin.BlueBinRoles where RoleName like 'BlueBin%'
-END
-
-if not exists(select * from bluebin.Config where ConfigName = 'MENU-TimeStudy')  
-BEGIN
-insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
-select 'MENU-TimeStudy','0',1,getdate(),'DMS','Time Study Modules are available for this client. Default=0 (Boolean 0 is No, 1 is Yes)'
-END
-GO
-
-if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-Activity%')  
-BEGIN
-insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
-('OP-Activity Times','0',1,getdate(),'Reports','Setting for whether to display the Time Study Activity Times'),
-('OP-Activity Averages','0',1,getdate(),'Reports','Setting for whether to display the Time Study Averages for Nodes'),
-('OP-Activity Planner','0',1,getdate(),'Reports','Setting for whether to display the Time Study Overview Dashboard (Detail)')
-END
 
 
 if exists(select * from scan.ScanBatch where ScanType = 'Order')  
@@ -411,6 +407,7 @@ END
 if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-%')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
+('OP-Gemba Auditor Details','0',1,getdate(),'Reports','Setting for whether to display the Gemba Auditor Details'),
 ('OP-Activity Times','0',1,getdate(),'Reports','Setting for whether to display the Time Study Activity Times'),
 ('OP-Activity Averages','0',1,getdate(),'Reports','Setting for whether to display the Time Study Averages for Nodes'),
 ('OP-Activity Planner','0',1,getdate(),'Reports','Setting for whether to display the Time Study Overview Dashboard (Detail)'),
@@ -1542,7 +1539,7 @@ select
 sbr.ScanBatchID,
 db.BinKey,
 db.BinSequence,
-rtrim(sbr.LocationID) as LocationID,
+sbr.LocationID as LocationID,
 dl.LocationName as LocationName,
 slr.ItemID,
 di.ItemDescription,
@@ -2739,9 +2736,9 @@ select @ScanDate = case when @ScanDate = 'Today' then convert(varchar,(convert(D
 
 select 
 sb.ScanBatchID,
-rtrim(df.FacilityID) as FacilityID,
+sb.FacilityID as FacilityID,
 df.FacilityName as FacilityName,
-rtrim(sb.LocationID) as LocationID,
+sb.LocationID as LocationID,
 dl.LocationName as LocationName,
 max(sl.Line) as BinsScanned,
 sb.ScanDateTime as [DateScanned],
@@ -2774,7 +2771,7 @@ and sb.LocationID like '%' + @Location + '%'
 
 group by 
 sb.ScanBatchID,
-df.FacilityID,
+sb.FacilityID,
 df.FacilityName,
 sb.LocationID,
 dl.LocationName,
@@ -2815,7 +2812,7 @@ select
 sb.ScanBatchID,
 db.BinKey,
 db.BinSequence,
-rtrim(sb.LocationID) as LocationID,
+sb.LocationID as LocationID,
 dl.LocationName as LocationName,
 sl.ItemID,
 di.ItemDescription,
@@ -2914,7 +2911,7 @@ select
     ISNULL(v.[Title],'') as AssignedTitleName,
 	qt.Name as QCNType,
 q.[ItemID],
-COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description') as ItemClinicalDescription,
+q.ClinicalDescription as ItemClinicalDescription,
 q.Par,
 q.UOM,
 q.ManuNumName,
@@ -3542,6 +3539,71 @@ grant exec on sp_SelectConfig to appusers
 GO
 
 
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNodeEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectGembaAuditNodeEdit
+GO
+
+--exec sp_SelectGembaAuditNodeEdit '507'
+
+CREATE PROCEDURE sp_SelectGembaAuditNodeEdit
+@GembaAuditNodeID int
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+select
+		a.[GembaAuditNodeID]
+		,convert(varchar,a.[Date],101) as [Date]
+		,[FacilityID] as FacilityID
+		,rtrim(LocationID) as LocationID
+		,b1.UserLogin as Auditer
+		,a.[AdditionalComments]
+		,a.[PS_EmptyBins]
+		,a.[PS_BackBins]
+		,a.[PS_StockOuts]
+		,a.[PS_ReturnVolume]
+		,a.[PS_NonBBT]
+		,a.[PS_OrangeCones]
+		,a.[PS_Comments]
+		,a.[RS_BinsFilled]
+		,a.[RS_EmptiesCollected]
+		,a.[RS_BinServices]
+		,a.[RS_NodeSwept]
+		,a.[RS_NodeCorrections]
+		,b2.LastName + ', ' + b2.FirstName  as RS_ShadowedUser
+		,a.[RS_Comments]
+
+		,a.[SS_Supplied]
+		,a.[SS_KanbansPP]
+		,a.[SS_StockoutsPT]
+		,a.[SS_StockoutsMatch]
+		,a.[SS_HuddleBoardMatch]
+		,a.[SS_Comments]
+
+		,a.[NIS_Labels]
+		,a.[NIS_CardHolders]
+		,a.[NIS_BinsRacks]
+		,a.[NIS_GeneralAppearance]
+		,a.[NIS_Signage]
+		,a.[NIS_Comments]
+		,a.[PS_TotalScore]
+		,a.[RS_TotalScore]
+		,a.[SS_TotalScore]
+		,a.[NIS_TotalScore]
+		,a.[TotalScore]
+		,convert(varchar,a.[LastUpdated],101) as [LastUpdated]
+		from gemba.GembaAuditNode a 
+				inner join bluebin.BlueBinUser b1 on a.[AuditerUserID] = b1.BlueBinUserID
+				left join bluebin.BlueBinResource b2 on a.[RS_ShadowedUserID] = b2.BlueBinResourceID where a.GembaAuditNodeID = @GembaAuditNodeID
+END
+GO
+grant exec on sp_SelectGembaAuditNodeEdit to appusers
+GO
+
 
 --*****************************************************
 --**************************SPROC**********************
@@ -3595,70 +3657,6 @@ GO
 
 
 
---*****************************************************
---**************************SPROC**********************
-
-if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNodeEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure sp_SelectGembaAuditNodeEdit
-GO
-
---exec sp_SelectGembaAuditNodeEdit 'TEST'
-
-CREATE PROCEDURE sp_SelectGembaAuditNodeEdit
-@GembaAuditNodeID int
-
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-select
-		a.[GembaAuditNodeID]
-		,convert(varchar,a.[Date],101) as [Date]
-		,rtrim([FacilityID]) as FacilityID
-		,rtrim([LocationID]) as LocationID
-		,b1.UserLogin as Auditer
-		,a.[AdditionalComments]
-		,a.[PS_EmptyBins]
-		,a.[PS_BackBins]
-		,a.[PS_StockOuts]
-		,a.[PS_ReturnVolume]
-		,a.[PS_NonBBT]
-		,a.[PS_OrangeCones]
-		,a.[PS_Comments]
-		,a.[RS_BinsFilled]
-		,a.[RS_EmptiesCollected]
-		,a.[RS_BinServices]
-		,a.[RS_NodeSwept]
-		,a.[RS_NodeCorrections]
-		,b2.LastName + ', ' + b2.FirstName + ' (' + b2.Login + ')' as RS_ShadowedUser
-		,a.[RS_Comments]
-
-		,a.[SS_Supplied]
-		,a.[SS_KanbansPP]
-		,a.[SS_StockoutsPT]
-		,a.[SS_StockoutsMatch]
-		,a.[SS_HuddleBoardMatch]
-		,a.[SS_Comments]
-
-		,a.[NIS_Labels]
-		,a.[NIS_CardHolders]
-		,a.[NIS_BinsRacks]
-		,a.[NIS_GeneralAppearance]
-		,a.[NIS_Signage]
-		,a.[NIS_Comments]
-		,a.[PS_TotalScore]
-		,a.[RS_TotalScore]
-		,a.[SS_TotalScore]
-		,a.[NIS_TotalScore]
-		,a.[TotalScore]
-		,convert(varchar,a.[LastUpdated],101) as [LastUpdated]
-		from gemba.GembaAuditNode a 
-				inner join bluebin.BlueBinUser b1 on a.[AuditerUserID] = b1.BlueBinUserID
-				left join bluebin.BlueBinResource b2 on a.[RS_ShadowedUserID] = b2.BlueBinResourceID where a.GembaAuditNodeID = @GembaAuditNodeID
-END
-GO
-grant exec on sp_SelectGembaAuditNodeEdit to appusers
-GO
 
 
 --*****************************************************
@@ -3677,13 +3675,13 @@ BEGIN
 SET NOCOUNT ON
 	SELECT 
 		BlueBinResourceID,
-		LastName + ', ' + FirstName + ' (' + Login + ')' as FullName 
+		LastName + ', ' + FirstName as FullName 
 	
 	FROM [bluebin].[BlueBinResource] 
 	
 	WHERE 
 		Title in (Select ConfigValue from bluebin.Config where ConfigName = 'GembaShadowTitle')
-		order by 1
+		order by 2
 END
 GO
 grant exec on sp_SelectGembaShadow to appusers
@@ -3693,6 +3691,7 @@ GO
 
 --*****************************************************
 --**************************SPROC**********************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectLocation') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectLocation
 GO
@@ -3708,7 +3707,7 @@ SET NOCOUNT ON
 
 SELECT 
 LocationFacility as FacilityID,
-LocationID,
+rtrim(LocationID) as LocationID,
 --LocationName,
 case when LocationID = LocationName then LocationID else LocationID + ' - ' + [LocationName] end as LocationName 
 FROM [bluebin].[DimLocation] where BlueBinFlag = 1
@@ -3800,7 +3799,7 @@ BEGIN
 SET NOCOUNT ON
 SELECT 
 	[QCNID]
-	,rtrim([LocationID]) as LocationID
+	,rtrim(LocationID) as LocationID
 	,a.FacilityID
 	,rtrim(a.ItemID) as ItemID
 	,a.ClinicalDescription
@@ -4639,7 +4638,7 @@ Update [gemba].[GembaAuditNode] SET
            ,[RS_BinServices] = @RS_BinServices
            ,[RS_NodeSwept] = @RS_NodeSwept
            ,[RS_NodeCorrections] = @RS_NodeCorrections
-           ,[RS_ShadowedUserID] = (select BlueBinResourceID from bluebin.BlueBinResource where LastName + ', ' + FirstName + ' (' + Login + ')' = @RS_ShadowedUser)
+           ,[RS_ShadowedUserID] = (select BlueBinResourceID from bluebin.BlueBinResource where LastName + ', ' + FirstName  = @RS_ShadowedUser)
            ,[RS_Comments] = @RS_Comments
            ,[SS_Supplied] = @SS_Supplied
 		   ,[SS_KanbansPP] = @SS_KanbansPP
@@ -4678,7 +4677,6 @@ END
 GO
 grant exec on sp_EditGembaAuditNode to appusers
 GO
-
 
 --*****************************************************
 --**************************SPROC**********************
@@ -4794,7 +4792,7 @@ getdate(),  --Date
 @RS_BinServices,
 @RS_NodeSwept,
 @RS_NodeCorrections,
-(select BlueBinResourceID from bluebin.BlueBinResource where LastName + ', ' + FirstName + ' (' + Login + ')' = @RS_ShadowedUser ),
+(select BlueBinResourceID from bluebin.BlueBinResource where LastName + ', ' + FirstName  = @RS_ShadowedUser ),
 @RS_Comments,
 @SS_Supplied,
 @SS_KanbansPP,
@@ -5628,7 +5626,7 @@ select
 bbpm.[ParMasterID],
 bbpm.[FacilityID],
 bbf.[FacilityName],
-rtrim(bbpm.[LocationID]) as LocationID,
+bbpm.[LocationID] as LocationID,
 ISNULL((rtrim(bblm.[LocationName])),'') as LocationName,
 rtrim(bbpm.[ItemID]) as ItemID,
 ISNULL((COALESCE(bbim.ItemClinicalDescription,bbim.ItemDescription,'None')),'') as ItemDescription,
@@ -6242,7 +6240,7 @@ select
 sb.ScanBatchID,
 db.BinKey,
 db.BinSequence,
-rtrim(sb.LocationID) as LocationID,
+sb.LocationID as LocationID,
 dl.LocationName as LocationName,
 sl.ItemID,
 di.ItemDescription,
@@ -6718,6 +6716,7 @@ GO
 
 
 
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -6747,7 +6746,6 @@ END
 GO
 grant exec on sp_SelectTimeStudyGroupNames to appusers
 GO
-
 
 
 
@@ -6785,13 +6783,14 @@ inner join bluebin.DimLocation dl on t.LocationID = dl.LocationID and t.Facility
 inner join bluebin.DimFacility df on t.FacilityID = df.FacilityID
 where t.Active = 1
 and df.FacilityName like '%' + @FacilityName + '%'
-and dl.LocationName like '%' + @LocationName + '%'
+and (dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' or t.LocationID like '%' + @LocationName + '%')
 and t.GroupName like '%' + @GroupName + '%'
 
 END
 GO
 grant exec on sp_SelectTimeStudyGroup to appusers
 GO
+
 
 
 
@@ -7287,6 +7286,8 @@ GO
 grant exec on sp_InsertTimeStudyNodeService to appusers
 GO
 
+
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -7294,13 +7295,21 @@ if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertTimeStud
 drop procedure sp_InsertTimeStudyGroup
 GO
 
---exec sp_InsertTimeStudyGroup 
+/*
+exec sp_InsertTimeStudyGroup '6','BB001','Region 1','Region 1','gbutler@bluebin.com'
+exec sp_InsertTimeStudyGroup '6','BB002','Region 2','Region 2','gbutler@bluebin.com'
+exec sp_InsertTimeStudyGroup '6','BB003','Region 3','Region 3','gbutler@bluebin.com'
+exec sp_InsertTimeStudyGroup '6','BB004','Region 4','Region 4','gbutler@bluebin.com'
+exec sp_InsertTimeStudyGroup '6','BB005','Region 5','Region 5','gbutler@bluebin.com'
+exec sp_InsertTimeStudyGroup '6','BB006','Region 6','Region 6','gbutler@bluebin.com'
+*/
 
 CREATE PROCEDURE sp_InsertTimeStudyGroup
 @FacilityID int,
 @LocationID varchar(10),
 @GroupName varchar(50),
-@Description varchar(255)
+@Description varchar(255),
+@BlueBinUser varchar(30)
 
 
 --WITH ENCRYPTION
@@ -7308,6 +7317,8 @@ AS
 BEGIN
 SET NOCOUNT ON
 
+if not exists (select * from bluebin.TimeStudyGroup where FacilityID = @FacilityID and LocationID = @LocationID and GroupName = @GroupName)
+Begin
 Insert into bluebin.TimeStudyGroup (
 	[FacilityID],
 	[LocationID],
@@ -7324,10 +7335,20 @@ VALUES (
 	getdate()
 )
 
+
+Declare @TimeStudyID int, @message varchar(255)
+SET @TimeStudyID = SCOPE_IDENTITY()
+set @message = 'Added Location ' + @LocationID + ' to group ' + @GroupName
+	exec sp_InsertMasterLog @BlueBinUser,'TimeStudy',@message,@TimeStudyID
+END
+
 END
 GO
 grant exec on sp_InsertTimeStudyGroup to appusers
 GO
+
+
+
 
 
 
@@ -7557,6 +7578,7 @@ GO
 
 
 
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -7732,6 +7754,7 @@ GO
 
 
 
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -7759,6 +7782,7 @@ END
 GO
 grant exec on sp_DeleteTimeStudyGroup to appusers
 GO
+
 
 
 --*****************************************************
@@ -8636,7 +8660,7 @@ Print 'Job Updates Complete'
 
 
 
-declare @version varchar(50) = '2.4.20161021' --Update Version Number here
+declare @version varchar(50) = '2.4.20161104' --Update Version Number here
 
 
 if not exists (select * from bluebin.Config where ConfigName = 'Version')
@@ -8649,3 +8673,6 @@ Update bluebin.Config set ConfigValue = @version where ConfigName = 'Version'
 Print 'Version Updated to ' + @version
 Print 'DB: ' + DB_NAME() + ' updated'
 GO
+
+--exec ssp_Versions
+

@@ -5,7 +5,7 @@ if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAud
 drop procedure sp_SelectGembaAuditNodeEdit
 GO
 
---exec sp_SelectGembaAuditNodeEdit 'TEST'
+--exec sp_SelectGembaAuditNodeEdit '507'
 
 CREATE PROCEDURE sp_SelectGembaAuditNodeEdit
 @GembaAuditNodeID int
@@ -17,8 +17,8 @@ SET NOCOUNT ON
 select
 		a.[GembaAuditNodeID]
 		,convert(varchar,a.[Date],101) as [Date]
-		,rtrim([FacilityID]) as FacilityID
-		,rtrim([LocationID]) as LocationID
+		,[FacilityID] as FacilityID
+		,rtrim(LocationID) as LocationID
 		,b1.UserLogin as Auditer
 		,a.[AdditionalComments]
 		,a.[PS_EmptyBins]
@@ -33,7 +33,7 @@ select
 		,a.[RS_BinServices]
 		,a.[RS_NodeSwept]
 		,a.[RS_NodeCorrections]
-		,b2.LastName + ', ' + b2.FirstName + ' (' + b2.Login + ')' as RS_ShadowedUser
+		,b2.LastName + ', ' + b2.FirstName  as RS_ShadowedUser
 		,a.[RS_Comments]
 
 		,a.[SS_Supplied]

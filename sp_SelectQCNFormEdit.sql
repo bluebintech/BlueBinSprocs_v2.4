@@ -13,7 +13,7 @@ BEGIN
 SET NOCOUNT ON
 SELECT 
 	[QCNID]
-	,rtrim([LocationID]) as LocationID
+	,rtrim(LocationID) as LocationID
 	,a.FacilityID
 	,rtrim(a.ItemID) as ItemID
 	,a.ClinicalDescription

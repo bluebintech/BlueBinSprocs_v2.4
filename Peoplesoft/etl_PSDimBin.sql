@@ -71,18 +71,22 @@ INTO   bluebin.DimBin
 FROM   
 	(
 	select distinct 
-	INV_CART_ID, 
-	INV_ITEM_ID,
-	case when LEN(COMPARTMENT) < 6 then '' else COMPARTMENT end as COMPARTMENT,
-	max(QTY_OPTIMAL) as QTY_OPTIMAL,
-	UNIT_OF_MEASURE
+	c.INV_CART_ID, 
+	c.INV_ITEM_ID,
+	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end as COMPARTMENT,
+	c.QTY_OPTIMAL,
+	c.UNIT_OF_MEASURE
 	
-	 from dbo.CART_TEMPL_INV
+	 from dbo.CART_TEMPL_INV c
+	 inner join (select INV_CART_ID, INV_ITEM_ID, max(COUNT_ORDER) as COUNT_ORDER from CART_TEMPL_INV where COUNT_ORDER is not null group by INV_CART_ID, INV_ITEM_ID) a 
+		on c.INV_CART_ID = a.INV_CART_ID and c.INV_ITEM_ID = a.INV_ITEM_ID and c.COUNT_ORDER = a.COUNT_ORDER
+	 --where c.INV_ITEM_ID = '1446' and c.INV_CART_ID = 'L0153'
 	 group by 
-	 INV_CART_ID, 
-	INV_ITEM_ID,
-	case when LEN(COMPARTMENT) < 6 then '' else COMPARTMENT end,
-	UNIT_OF_MEASURE ) Bins
+	 c.INV_CART_ID, 
+	c.INV_ITEM_ID,
+	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end,
+	c.QTY_OPTIMAL,
+	c.UNIT_OF_MEASURE ) Bins
 	          
 	  LEFT JOIN dbo.CART_ATTRIB_INV Carts
               ON Bins.INV_CART_ID = Carts.INV_CART_ID
@@ -90,15 +94,16 @@ FROM
               ON Carts.LOCATION = Locations.LOCATION
 		INNER JOIN bluebin.DimLocation dl
               ON Locations.LOCATION COLLATE DATABASE_DEFAULT = dl.LocationID
-		INNER JOIN dbo.BU_ITEMS_INV bu on Bins.INV_ITEM_ID = bu.INV_ITEM_ID  and bu.BUSINESS_UNIT in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
+		LEFT JOIN dbo.BU_ITEMS_INV bu on Bins.INV_ITEM_ID = bu.INV_ITEM_ID  and bu.BUSINESS_UNIT in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
 WHERE  
+		
 		dl.BlueBinFlag = 1 and
 		LEN(COMPARTMENT) >=6 and 
 		(LEFT(Locations.LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
 		or Locations.LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
 
-
-		--and Bins.INV_ITEM_ID = '0301101' and Bins.INV_CART_ID = '99059BB10C'
+		--and Bins.INV_ITEM_ID = '1446' and Bins.INV_CART_ID = 'L0153'
+		
 		order by Locations.LOCATION,Bins.INV_ITEM_ID 
 
 

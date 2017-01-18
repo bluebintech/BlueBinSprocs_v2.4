@@ -76,12 +76,22 @@ SELECT COMPANY,
        ITEM_TYPE,
        CREATION_TIME,
 	   CLOSED_FL,
-       Cast(CONVERT(VARCHAR, CREATION_DATE, 101) + ' '
-            + LEFT(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 2)
-            + ':'
-            + Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
-            + ':'
-            + Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 5, 2) AS DATETIME) AS CREATION_DATE
+       case	
+		when convert(int,(Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 5, 2))) < 60
+		then 
+		   Cast(CONVERT(VARCHAR, CREATION_DATE, 101) + ' '
+				+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 5, 2) AS DATETIME)
+		else
+			Cast(CONVERT(VARCHAR, CREATION_DATE, 101) + ' '
+				+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
+				+ ':59' AS DATETIME)
+		end AS CREATION_DATE
 INTO #REQLINE
 FROM   REQLINE
 WHERE  STATUS = 9

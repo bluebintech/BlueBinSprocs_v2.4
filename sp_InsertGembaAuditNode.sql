@@ -112,7 +112,7 @@ getdate(),  --Date
 @RS_BinServices,
 @RS_NodeSwept,
 @RS_NodeCorrections,
-(select BlueBinResourceID from bluebin.BlueBinResource where LastName + ', ' + FirstName + ' (' + Login + ')' = @RS_ShadowedUser ),
+(select BlueBinResourceID from bluebin.BlueBinResource where LastName + ', ' + FirstName  = @RS_ShadowedUser ),
 @RS_Comments,
 @SS_Supplied,
 @SS_KanbansPP,

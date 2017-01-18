@@ -597,18 +597,22 @@ INTO   bluebin.DimBin
 FROM   
 	(
 	select distinct 
-	INV_CART_ID, 
-	INV_ITEM_ID,
-	case when LEN(COMPARTMENT) < 6 then '' else COMPARTMENT end as COMPARTMENT,
-	max(QTY_OPTIMAL) as QTY_OPTIMAL,
-	UNIT_OF_MEASURE
+	c.INV_CART_ID, 
+	c.INV_ITEM_ID,
+	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end as COMPARTMENT,
+	c.QTY_OPTIMAL,
+	c.UNIT_OF_MEASURE
 	
-	 from dbo.CART_TEMPL_INV
+	 from dbo.CART_TEMPL_INV c
+	 inner join (select INV_CART_ID, INV_ITEM_ID, max(COUNT_ORDER) as COUNT_ORDER from CART_TEMPL_INV where COUNT_ORDER is not null group by INV_CART_ID, INV_ITEM_ID) a 
+		on c.INV_CART_ID = a.INV_CART_ID and c.INV_ITEM_ID = a.INV_ITEM_ID and c.COUNT_ORDER = a.COUNT_ORDER
+	 --where c.INV_ITEM_ID = '1446' and c.INV_CART_ID = 'L0153'
 	 group by 
-	 INV_CART_ID, 
-	INV_ITEM_ID,
-	case when LEN(COMPARTMENT) < 6 then '' else COMPARTMENT end,
-	UNIT_OF_MEASURE ) Bins
+	 c.INV_CART_ID, 
+	c.INV_ITEM_ID,
+	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end,
+	c.QTY_OPTIMAL,
+	c.UNIT_OF_MEASURE ) Bins
 	          
 	  LEFT JOIN dbo.CART_ATTRIB_INV Carts
               ON Bins.INV_CART_ID = Carts.INV_CART_ID
@@ -616,15 +620,16 @@ FROM
               ON Carts.LOCATION = Locations.LOCATION
 		INNER JOIN bluebin.DimLocation dl
               ON Locations.LOCATION COLLATE DATABASE_DEFAULT = dl.LocationID
-		INNER JOIN dbo.BU_ITEMS_INV bu on Bins.INV_ITEM_ID = bu.INV_ITEM_ID  and bu.BUSINESS_UNIT in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
+		LEFT JOIN dbo.BU_ITEMS_INV bu on Bins.INV_ITEM_ID = bu.INV_ITEM_ID  and bu.BUSINESS_UNIT in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
 WHERE  
+		
 		dl.BlueBinFlag = 1 and
 		LEN(COMPARTMENT) >=6 and 
 		(LEFT(Locations.LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
 		or Locations.LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
 
-
-		--and Bins.INV_ITEM_ID = '0301101' and Bins.INV_CART_ID = '99059BB10C'
+		--and Bins.INV_ITEM_ID = '1446' and Bins.INV_CART_ID = 'L0153'
+		
 		order by Locations.LOCATION,Bins.INV_ITEM_ID 
 
 
@@ -638,6 +643,7 @@ SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimBin'
 
 GO
+
 
 
 
@@ -676,6 +682,7 @@ END Catch
 
 --**************************
 declare @DefaultLT int = (Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime')
+declare @POTimeAdjust int = (Select max(ConfigValue) from bluebin.Config where ConfigName = 'PS_POTimeAdjust')
 ;
 WITH FirstScans
      AS (SELECT INV_CART_ID      AS LocationID,
@@ -688,7 +695,8 @@ WITH FirstScans
                    INV_ITEM_ID),
 --**************************
 Orders
-     AS (SELECT Row_number()
+     AS (
+	 SELECT Row_number()
                   OVER(
                     PARTITION BY PO_LN.INV_ITEM_ID, PO_LN_DST.LOCATION, PO_HDR.PO_DT
                     ORDER BY PO_LN.PO_ID, PO_LN.LINE_NBR) AS DailySeq,
@@ -701,7 +709,7 @@ Orders
                 RECEIPT_DTTM                              AS CloseDate,
                 QTY_PO                                    AS OrderQty,
                 PO_LN.UNIT_OF_MEASURE                     AS OrderUOM,
-                PO_HDR.PO_DT
+                DATEADD(hour,@POTimeAdjust,PO_HDR.PO_DT) as PO_DT
          FROM   dbo.PO_LINE_DISTRIB PO_LN_DST
                 INNER JOIN dbo.PO_LINE PO_LN
                         ON PO_LN_DST.PO_ID = PO_LN.PO_ID
@@ -722,6 +730,7 @@ Orders
                 AND PO_LN.CANCEL_STATUS NOT IN ( 'X', 'D' )
                 --AND PO_LN_DST.BUSINESS_UNIT_GL = 209
 				)
+				
 				,
 
 
@@ -736,8 +745,9 @@ CartCounts
                 INV_ITEM_ID					   AS ItemID,
                 DEMAND_DATE                    AS PO_DT,
                 LAST_DTTM_UPDATE               AS SCAN_DATE
+				--CART_COUNT_QTY
          FROM   dbo.CART_CT_INF_INV
-         WHERE  --CART_COUNT_QTY <> 0
+         WHERE  --CART_COUNT_QTY <> 0 AND
                 --AND CART_REPLEN_OPT = '02'
 				(LEFT(INV_CART_ID, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
 				or INV_CART_ID COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))),
@@ -749,12 +759,12 @@ SELECT a.BinKey,
        a.LocationID,
        a.OrderNum,
        a.LineNum,
-       b.SCAN_DATE                 AS OrderDate,
+       COALESCE(b.SCAN_DATE,a.PO_DT)                 AS OrderDate,
        a.CloseDate,
        a.OrderQty,
        a.OrderUOM
 FROM   Orders a
-       INNER JOIN CartCounts b
+       LEFT JOIN CartCounts b
                ON a.LocationID = b.LocationID
                   AND a.ItemID = b.ItemID
                   AND a.PO_DT = b.PO_DT
@@ -780,7 +790,7 @@ FROM   dbo.IN_DEMAND Picks
 		ON Picks.INV_ITEM_ID = FirstScans.ItemID AND Picks.LOCATION = FirstScans.LocationID
 WHERE  (LEFT(LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
 		or LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
-       AND (CANCEL_DTTM IS NULL or CANCEL_DTTM < '1900-01-02')
+       AND (CANCEL_DTTM IS NULL  or CANCEL_DTTM < '1900-01-02')
 	   AND DEMAND_DATE >= FirstScanDate)
 	   
 	   ,
@@ -874,6 +884,7 @@ WHERE  a.OrderDate >= db.BinGoLiveDate --and a.OrderDate > getdate() -360--and d
 Order by BinKey,ScanHistseq asc
 
 
+
 GO
 
 UPDATE etl.JobSteps
@@ -882,6 +893,13 @@ WHERE StepName = 'FactScan'
 
 GO
 
+
+
+/*************************************************
+
+			FactBinSnapshot
+
+*************************************************/
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -2418,78 +2436,6 @@ GO
 
 grant exec on tb_Training to public
 GO
---*********************************************************************************************
---Tableau Sproc  These load data into the datasources for Tableau
---*********************************************************************************************
-
-if exists (select * from dbo.sysobjects where id = object_id(N'tb_GembaDashboard') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure tb_GembaDashboard
-GO
-
---exec tb_GembaDashboard 
-CREATE PROCEDURE tb_GembaDashboard
-
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-
-select 
-	g.[GembaAuditNodeID],
-	df.FacilityName,
-	dl.[LocationID],
-	g.LocationID as AuditLocationID,
-        dl.[LocationName],
-			dl.BlueBinFlag,
-	u.LastName + ', ' + u.FirstName  as Auditer,
-    u.[UserLogin] as Login,
-	u.Title as RoleName,
-	u.GembaTier,
-	g.PS_TotalScore,
-	g.RS_TotalScore,
-	g.SS_TotalScore,
-	g.NIS_TotalScore,
-	g.TotalScore,
-	case when TotalScore < 90 then 1 else 0 end as ScoreUnder,
-	(select count(*) from bluebin.DimLocation where BlueBinFlag = 1) as LocationCount,
-    g.[Date],
-	g2.[MaxDate] as LastAuditDate,
-	case 
-		when g.[Date] is null then 365
-		else convert(int,(getdate() - g2.[MaxDate])) end as LastAudit,
-	tier1.[MaxDate] as LastAuditDateTier1,
-	case 
-		when g.[Date] is null  and tier1.[MaxDate] is null or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier1')) then 365
-		else convert(int,(getdate() - tier1.[MaxDate])) end as LastAuditTier1,
-	tier2.[MaxDate] as LastAuditDateTier2,	
-	case 
-		when g.[Date] is null  and tier2.[MaxDate] is null or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier2')) then 365
-		else convert(int,(getdate() - tier2.[MaxDate])) end as LastAuditTier2,
-	tier3.[MaxDate] as LastAuditDateTier3,	
-	case 
-		when g.[Date] is null and tier3.[MaxDate] is null  or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier3')) then 365
-		else convert(int,(getdate() - tier3.[MaxDate])) end as LastAuditTier3,
-		
-    g.[LastUpdated]
-from  [bluebin].[DimLocation] dl
-		left join [gemba].[GembaAuditNode] g on dl.LocationID = g.LocationID
-		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] group by LocationID) g2 on dl.LocationID = g2.LocationID and g.[Date] = g2.MaxDate
-		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier1') group by LocationID) tier1 on dl.LocationID = tier1.LocationID and g.[Date] = tier1.MaxDate
-		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier2') group by LocationID) tier2 on dl.LocationID = tier2.LocationID and g.[Date] = tier2.MaxDate
-		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier3') group by LocationID) tier3 on dl.LocationID = tier3.LocationID and g.[Date] = tier3.MaxDate
-        --left join [bluebin].[DimLocation] dl on g.LocationID = dl.LocationID and dl.BlueBinFlag = 1
-		left join [bluebin].[BlueBinUser] u on g.AuditerUserID = u.BlueBinUserID
-		left join bluebin.BlueBinRoles bbr on u.RoleID = bbr.RoleID
-		left join bluebin.DimFacility df on g.FacilityID = df.FacilityID
-WHERE dl.BlueBinFlag = 1 and g.Active = 1
-            order by dl.LocationID,[Date] asc
-
-END
-GO
-grant exec on tb_GembaDashboard to public
-GO
-
-
 
 
 --*********************************************************************************************
@@ -2800,6 +2746,7 @@ GO
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
 
+
 if exists (select * from dbo.sysobjects where id = object_id(N'etl_DimBinHistory') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure etl_DimBinHistory
 GO
@@ -2811,7 +2758,7 @@ CREATE PROCEDURE [dbo].[etl_DimBinHistory]
 AS
 
 /*
-select * from bluebin.DimBinHistory where LastSequence = 'N/A' order by FacilityID,LocationID,ItemID,Date
+select * from bluebin.DimBinHistory where Date = '2016-12-07' and LastBinQty <> BinQty LastSequence = 'N/A' order by FacilityID,LocationID,ItemID,Date
 select * from bluebin.DimBin where LocationID = 'B6183' and ItemID = '700'  
 select * from tableau.Kanban where LocationID = 'B6183' and ItemID = '700' and convert(Date,[Date]) = convert(Date,getdate()-1)
 update bluebin.DimBinHistory set LastUpdated = getdate() -3 where DimBinHistoryID = 6161
@@ -2835,9 +2782,10 @@ BEGIN
 insert into bluebin.DimBinHistory ([Date],BinKey,FacilityID,LocationID,ItemID,BinQty,BinUOM,[Sequence],LastBinQty,LastBinUOM,[LastSequence]) 
 select convert(Date,getdate()-1),db.BinKey,db.BinFacility,db.LocationID,db.ItemID,convert(int,db.BinQty),db.BinUOM,db.BinSequence,ISNULL(dbh.BinQty,0),ISNULL(dbh.BinUOM,'N/A'),ISNULL(dbh.Sequence,'N/A')
 from bluebin.DimBin db
-left join bluebin.DimBinHistory dbh on db.BinFacility = dbh.FacilityID and db.LocationID = dbh.LocationID and db.ItemID = dbh.ItemID and dbh.[Date] = convert(Date,getdate()-2)
-END
+left join 
+	(select distinct [Date],BinKey,FacilityID,LocationID,ItemID,BinQty,BinUOM,[Sequence] from bluebin.DimBinHistory where [Date] = convert(Date,getdate()-2)) dbh on db.BinFacility = dbh.FacilityID and db.LocationID = dbh.LocationID and db.ItemID = dbh.ItemID
 
+END
 
 
 GO
@@ -2848,6 +2796,7 @@ WHERE StepName = 'DimBinHistory'
 GO
 grant exec on etl_DimBinHistory to public
 GO
+
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
@@ -3147,6 +3096,95 @@ A.BinStatus
 GO
 
 grant exec on tb_HealthTrends to public
+GO
+
+
+
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_GembaDashboard') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_GembaDashboard
+GO
+
+--exec tb_GembaDashboard 
+CREATE PROCEDURE tb_GembaDashboard
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+declare @GembaIdentifier varchar(50)
+select @GembaIdentifier = ConfigValue from bluebin.Config where ConfigName = 'GembaIdentifier'
+
+if @GembaIdentifier = '' 
+BEGIN
+set @GembaIdentifier = 'XXXXX'
+END
+
+select 
+	g.[GembaAuditNodeID],
+	df.FacilityName,
+	dl.[LocationID],
+	dl.LocationID as AuditLocationID,
+        dl.[LocationName],
+			dl.BlueBinFlag,
+	u.LastName + ', ' + u.FirstName  as Auditer,
+    u.[UserLogin] as Login,
+	u.Title as RoleName,
+	u.GembaTier,
+	g.PS_TotalScore,
+	g.RS_TotalScore,
+	g.SS_TotalScore,
+	g.NIS_TotalScore,
+	g.TotalScore,
+	case when TotalScore < 90 then 1 else 0 end as ScoreUnder,
+	(select count(*) from bluebin.DimLocation where BlueBinFlag = 1) as LocationCount,
+    g.[Date],
+	g2.[MaxDate] as LastAuditDate,
+	case 
+		when g.[Date] is null then 365
+		else convert(int,(getdate() - g2.[MaxDate])) end as LastAudit,
+	tier1.[MaxDate] as LastAuditDateTier1,
+	case 
+		when g.[Date] is null  and tier1.[MaxDate] is null or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier1')) then 365
+		else convert(int,(getdate() - tier1.[MaxDate])) end as LastAuditTier1,
+	tier2.[MaxDate] as LastAuditDateTier2,	
+	case 
+		when g.[Date] is null  and tier2.[MaxDate] is null or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier2')) then 365
+		else convert(int,(getdate() - tier2.[MaxDate])) end as LastAuditTier2,
+	tier3.[MaxDate] as LastAuditDateTier3,	
+	case 
+		when g.[Date] is null and tier3.[MaxDate] is null  or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier3')) then 365
+		else convert(int,(getdate() - tier3.[MaxDate])) end as LastAuditTier3,
+		
+    g.[LastUpdated],
+	PS_Comments,
+	RS_Comments,
+	NIS_Comments,
+	SS_Comments,
+	AdditionalComments,
+	case
+		when AdditionalComments like '%'+ @GembaIdentifier + '%' then 'Yes' else 'No' end as GembaIdent
+from  [bluebin].[DimLocation] dl
+		left join [gemba].[GembaAuditNode] g on dl.LocationID = g.LocationID
+		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] group by LocationID) g2 on dl.LocationID = g2.LocationID and g.[Date] = g2.MaxDate
+		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier1') group by LocationID) tier1 on dl.LocationID = tier1.LocationID and g.[Date] = tier1.MaxDate
+		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier2') group by LocationID) tier2 on dl.LocationID = tier2.LocationID and g.[Date] = tier2.MaxDate
+		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier3') group by LocationID) tier3 on dl.LocationID = tier3.LocationID and g.[Date] = tier3.MaxDate
+        --left join [bluebin].[DimLocation] dl on g.LocationID = dl.LocationID and dl.BlueBinFlag = 1
+		left join [bluebin].[BlueBinUser] u on g.AuditerUserID = u.BlueBinUserID
+		left join bluebin.BlueBinRoles bbr on u.RoleID = bbr.RoleID
+		left join bluebin.DimFacility df on dl.LocationFacility = df.FacilityID
+WHERE dl.BlueBinFlag = 1 and (g.Active = 1 or g.Active is null)
+            order by dl.LocationID,[Date] asc
+
+END
+GO
+grant exec on tb_GembaDashboard to public
 GO
 
 

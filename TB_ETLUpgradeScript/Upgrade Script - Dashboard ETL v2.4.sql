@@ -14,7 +14,7 @@ Upgrade Script to copy in the etl_ and tb_ sprocs used in both the daily etl and
 SET ANSI_NULLS ON
 GO
 
-SET QUOTED_IDENTIFIER ON
+		SET QUOTED_IDENTIFIER ON
 GO
 
 SET ANSI_PADDING ON
@@ -133,7 +133,6 @@ CREATE TABLE [etl].[JobSteps](
 ) ON [PRIMARY]
 ;  
 insert into etl.JobSteps (StepNumber,StepName,StepProcedure,StepTable,ActiveFlag,LastModifiedDate) VALUES
-
 ('1','DimItem','etl_DimItem','bluebin.DimItem',0,getdate()),
 ('2','DimLocation','etl_DimLocation','bluebin.DimLocation',0,getdate()),
 ('3','DimDate','etl_DimDate','bluebin.DimDate',0,getdate()),
@@ -151,7 +150,8 @@ insert into etl.JobSteps (StepNumber,StepName,StepProcedure,StepTable,ActiveFlag
 ('15','DimFacility','etl_DimFacility','bluebin.DimFacility',0,getdate()),
 ('16','BlueBinParMaster','etl_BlueBinParMaster','bluebin.BlueBinParMaster',0,getdate()),
 ('17','DimBinHistory','etl_DimBinHistory','bluebin.DimBinHistory',0,getdate()),
-('18','FactWHHistory','etl_FactWHHistory','bluebin.FactWHHistory',0,getdate())
+('18','FactWHHistory','etl_FactWHHistory','bluebin.FactWHHistory',0,getdate()),
+('19','FactActivityTimes','etl_FactActivityTimes','bluebin.FactActivityTimes',0,getdate())
 END
 GO
 
@@ -235,7 +235,571 @@ GO
 --etl sprocs
 *********************************************************************/
 
+/*********************************************************************
 
+FactFactActivityTimes
+
+--update etl.JobSteps set ActiveFlag = 1 where StepName = 'FactActivityTimes'
+
+*********************************************************************/
+
+IF EXISTS ( SELECT  *
+            FROM    sys.objects
+            WHERE   object_id = OBJECT_ID(N'etl_FactActivityTimes')
+                    AND type IN ( N'P', N'PC' ) ) 
+
+DROP PROCEDURE  etl_FactActivityTimes
+GO
+--exec etl_FactActivityTimes
+--select * from bluebin.FactActivityTimes
+
+CREATE PROCEDURE etl_FactActivityTimes
+
+AS
+
+/****************************		DROP FactActivityTimes ***********************************/
+ BEGIN TRY
+ DROP TABLE bluebin.FactActivityTimes
+ END TRY
+ BEGIN CATCH
+ END CATCH
+
+ /*******************************	CREATE FactActivityTimes	*********************************/
+ SET NOCOUNT ON
+
+/* CTE Table */
+Declare @FactActivityTimes TABLE ( Activity varchar(100),FacilityID int, FacilityName varchar(50),AvgS DECIMAL(10,2), AvgM DECIMAL(10,2), AvgH DECIMAL(10,2), LastUpdated date)
+
+/* Bin Fill */
+INSERT INTO @FactActivityTimes
+select 
+'Bin Fill' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem from bluebin.TimeStudyBinFill where MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem from bluebin.TimeStudyBinFill where MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+		
+/* Node Service */
+INSERT INTO @FactActivityTimes
+select 
+'NodeService' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID = (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue = 'Node service time') 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID = (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue = 'Node service time')
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+/* Travel Times All */
+INSERT INTO @FactActivityTimes
+select 
+'TravelTimeAll' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage','Travel time to next node','Leave Stage to enter node')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage','Travel time to next node','Leave Stage to enter node'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+/* Travel Times To Stage */
+INSERT INTO @FactActivityTimes
+select 
+'TravelTimeToStage' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+
+/* Travel Times Next Node */
+INSERT INTO @FactActivityTimes
+select 
+'TravelTimeNextNode' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel time to next node')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel time to next node'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+/* Travel Times From Stage */
+INSERT INTO @FactActivityTimes
+select 
+'TravelTimeFromStage' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Leave Stage to enter node')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Leave Stage to enter node'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+
+
+
+declare @StoreroomPL DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Storeroom Pick Lines')  --default is seconds in Config
+declare @ScanningBin DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Scanning Bin')  --default is seconds in Config
+declare @ScanningTime DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Scanning Time')--default is minutes in Config
+declare @ScanningNew DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Scan New Node')--default is minutes in Config
+declare @ScanningMove DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Scanning Move')--default is minutes in Config
+declare @ReturnsBinLg DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Returns Bins Large')--default is minutes in Config
+declare @ReturnsBinSm DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Returns Bins Small') --default is minutes in Config
+declare @ReturnsBinTH DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Returns Bins Threshhold')--default is Bin #s
+
+--select @ScanningTime 
+--select @ScanningNew 
+--select @ScanningMove 
+--select @ReturnsBinLg 
+--select @ReturnsBinSm 
+--select @ReturnsBinTH
+
+/* Storeroom Pick Lines */
+INSERT INTO @FactActivityTimes
+select 
+'Storeroom Pick Lines' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@StoreroomPL) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@StoreroomPL)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@StoreroomPL)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+/* Scanning Bin */
+INSERT INTO @FactActivityTimes
+select 
+'Scanning Bin' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ScanningBin) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ScanningBin)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ScanningBin)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+/* Scanning Time */
+INSERT INTO @FactActivityTimes
+select 
+'Scanning Time' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ScanningTime)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ScanningTime) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ScanningTime)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+/* Scanning Time for a New Node */
+INSERT INTO @FactActivityTimes
+select 
+'Scanning New' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ScanningNew)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ScanningNew) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ScanningNew)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+/* Scanning Move Computer between Nodes */
+INSERT INTO @FactActivityTimes
+select 
+'Scanning Move' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ScanningMove)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ScanningMove) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ScanningMove)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+/* Returns Bins Large */
+INSERT INTO @FactActivityTimes
+select 
+'Returns Bins Large DEFAULT' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ReturnsBinLg)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ReturnsBinLg) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ReturnsBinLg)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+/* Returns Bins Small */
+
+INSERT INTO @FactActivityTimes
+select 
+'Returns Bins Small DEFAULT' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ReturnsBinSm)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ReturnsBinSm) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ReturnsBinSm)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+/* Returns Bins Threshhold */
+INSERT INTO @FactActivityTimes
+select 
+'Returns Bins Threshhold' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ReturnsBinTH)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ReturnsBinTH) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ReturnsBinTH)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+
+/* Returns Bins Small */
+INSERT INTO @FactActivityTimes
+select 
+'Returns Bins Small' as Activity,
+df.FacilityID,
+df.FacilityName,
+case when CAST(AVG(AllSecItem) AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinSm)*60 AS DECIMAL(10,2)) else CAST(AVG(AllSecItem) AS DECIMAL(10,2)) end as AvgS,
+case when CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinSm) AS DECIMAL(10,2)) else CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) end as AvgM,
+case when CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinSm)/60 AS DECIMAL(10,2)) else CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) end as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time')) 
+			and MostRecent = 1
+			and SKUS <= @ReturnsBinTH) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time'))
+			and MostRecent = 0
+			and SKUS <=@ReturnsBinTH) as b
+			group by FacilityID
+		) as c 
+		right join bluebin.DimFacility df on c.FacilityID = df.FacilityID
+		inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1 
+		group by df.FacilityID,df.FacilityName
+		 
+/* Returns Bins Large */
+
+INSERT INTO @FactActivityTimes
+select 
+'Returns Bins Large' as Activity,
+df.FacilityID,
+df.FacilityName,
+case when CAST(AVG(AllSecItem) AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinLg)*60 AS DECIMAL(10,2)) else CAST(AVG(AllSecItem) AS DECIMAL(10,2)) end as AvgS,
+case when CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinLg) AS DECIMAL(10,2)) else CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) end as AvgM,
+case when CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinLg)/60 AS DECIMAL(10,2)) else CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) end as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time')) 
+			and MostRecent = 1
+			and SKUS > @ReturnsBinTH) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time'))
+			and MostRecent = 0
+			and SKUS > @ReturnsBinTH) as b
+			group by FacilityID
+		) as c 
+		right join bluebin.DimFacility df on c.FacilityID = df.FacilityID
+		inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1 
+		group by df.FacilityID,df.FacilityName
+
+
+
+/* Double Bin StockOut Sweep*/
+
+INSERT INTO @FactActivityTimes
+select 
+'Double Bin StockOut Sweep' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Write down Item numbers and sweep Stage')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Write down Item numbers and sweep Stage'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+/* Double Bin StockOut Key out */
+
+INSERT INTO @FactActivityTimes
+select 
+'Double Bin StockOut Key out' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Key out MSR')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Key out MSR'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+
+/* Double Bin StockOut Pick Items */
+
+INSERT INTO @FactActivityTimes
+select 
+'Double Bin StockOut Pick Items' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Pick Items')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Pick Items'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+
+/* Double Bin StockOut Deliver Items */
+
+INSERT INTO @FactActivityTimes
+select 
+'Double Bin StockOut Deliver Items' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Deliver Items')) 
+			and MostRecent = 1
+			) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Deliver Items'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+/* Double Bin StockOut All */
+
+INSERT INTO @FactActivityTimes
+select 
+'Double Bin StockOut All' as Activity,
+FacilityID,
+FacilityName,
+SUM(AvgS) as AvgS,
+SUM(AvgM) as AvgS,
+SUM(AvgH) as AvgS,
+convert(Date,getdate()) as LastUpdated
+from @FactActivityTimes
+where Activity like 'Double Bin%'
+group by
+FacilityID,
+FacilityName
+
+select * 
+into bluebin.FactActivityTimes
+from @FactActivityTimes
+
+UPDATE etl.JobSteps
+SET LastModifiedDate = GETDATE()
+WHERE StepName = 'FactActivityTimes'
+
+GO
 
 
 
@@ -481,12 +1045,6 @@ GO
 
 
 
-/********************************************************************
-
-					DimLocation
-
-********************************************************************/
-
 IF EXISTS ( SELECT  *
             FROM    sys.objects
             WHERE   object_id = OBJECT_ID(N'etl_DimLocation')
@@ -511,7 +1069,7 @@ AS
    SELECT Row_number()
              OVER(
                ORDER BY REQ_LOCATION) AS LocationKey,
-           REQ_LOCATION               AS LocationID,
+           REQ_LOCATION              AS LocationID,
            NAME                       AS LocationName,
            COMPANY                    AS LocationFacility,
            CASE
@@ -528,8 +1086,11 @@ AS
            END                        AS BlueBinFlag,
 		   ACTIVE_STATUS
     INTO   bluebin.DimLocation
-    FROM   RQLOC 
-
+    FROM   
+		(
+		select distinct REQ_LOCATION,NAME,COMPANY,ACTIVE_STATUS FROM RQLOC
+		) a 
+	--where REQ_LOCATION like 'BB%'
 
 
 GO
@@ -537,7 +1098,6 @@ GO
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimLocation'
-
 
 
 
@@ -858,6 +1418,7 @@ WHERE StepName = 'DimBin'
 
 
 
+
 /*************************************************
 
 			FactScan
@@ -935,12 +1496,22 @@ SELECT COMPANY,
        ITEM_TYPE,
        CREATION_TIME,
 	   CLOSED_FL,
-       Cast(CONVERT(VARCHAR, CREATION_DATE, 101) + ' '
-            + LEFT(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 2)
-            + ':'
-            + Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
-            + ':'
-            + Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 5, 2) AS DATETIME) AS CREATION_DATE
+       case	
+		when convert(int,(Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 5, 2))) < 60
+		then 
+		   Cast(CONVERT(VARCHAR, CREATION_DATE, 101) + ' '
+				+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 5, 2) AS DATETIME)
+		else
+			Cast(CONVERT(VARCHAR, CREATION_DATE, 101) + ' '
+				+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
+				+ ':59' AS DATETIME)
+		end AS CREATION_DATE
 INTO #REQLINE
 FROM   REQLINE
 WHERE  STATUS = 9
@@ -1105,6 +1676,7 @@ GO
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'FactScan'
+
 
 
 
@@ -2994,6 +3566,8 @@ GO
 
 grant exec on tb_Training to public
 GO
+
+
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
@@ -3005,16 +3579,25 @@ GO
 --exec tb_GembaDashboard 
 CREATE PROCEDURE tb_GembaDashboard
 
+
 --WITH ENCRYPTION
 AS
 BEGIN
 SET NOCOUNT ON
 
+declare @GembaIdentifier varchar(50)
+select @GembaIdentifier = ConfigValue from bluebin.Config where ConfigName = 'GembaIdentifier'
+
+if @GembaIdentifier = '' 
+BEGIN
+set @GembaIdentifier = 'XXXXX'
+END
+
 select 
 	g.[GembaAuditNodeID],
 	df.FacilityName,
 	dl.[LocationID],
-	g.LocationID as AuditLocationID,
+	dl.LocationID as AuditLocationID,
         dl.[LocationName],
 			dl.BlueBinFlag,
 	u.LastName + ', ' + u.FirstName  as Auditer,
@@ -3046,7 +3629,14 @@ select
 		when g.[Date] is null and tier3.[MaxDate] is null  or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier3')) then 365
 		else convert(int,(getdate() - tier3.[MaxDate])) end as LastAuditTier3,
 		
-    g.[LastUpdated]
+    g.[LastUpdated],
+	PS_Comments,
+	RS_Comments,
+	NIS_Comments,
+	SS_Comments,
+	AdditionalComments,
+	case
+		when AdditionalComments like '%'+ @GembaIdentifier + '%' then 'Yes' else 'No' end as GembaIdent
 from  [bluebin].[DimLocation] dl
 		left join [gemba].[GembaAuditNode] g on dl.LocationID = g.LocationID
 		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] group by LocationID) g2 on dl.LocationID = g2.LocationID and g.[Date] = g2.MaxDate
@@ -3056,8 +3646,8 @@ from  [bluebin].[DimLocation] dl
         --left join [bluebin].[DimLocation] dl on g.LocationID = dl.LocationID and dl.BlueBinFlag = 1
 		left join [bluebin].[BlueBinUser] u on g.AuditerUserID = u.BlueBinUserID
 		left join bluebin.BlueBinRoles bbr on u.RoleID = bbr.RoleID
-		left join bluebin.DimFacility df on g.FacilityID = df.FacilityID
-WHERE dl.BlueBinFlag = 1 and g.Active = 1
+		left join bluebin.DimFacility df on dl.LocationFacility = df.FacilityID
+WHERE dl.BlueBinFlag = 1 and (g.Active = 1 or g.Active is null)
             order by dl.LocationID,[Date] asc
 
 END
@@ -3407,6 +3997,7 @@ GO
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
 
+
 if exists (select * from dbo.sysobjects where id = object_id(N'etl_DimBinHistory') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure etl_DimBinHistory
 GO
@@ -3418,7 +4009,7 @@ CREATE PROCEDURE [dbo].[etl_DimBinHistory]
 AS
 
 /*
-select * from bluebin.DimBinHistory where LastSequence = 'N/A' order by FacilityID,LocationID,ItemID,Date
+select * from bluebin.DimBinHistory where Date = '2016-12-07' and LastBinQty <> BinQty LastSequence = 'N/A' order by FacilityID,LocationID,ItemID,Date
 select * from bluebin.DimBin where LocationID = 'B6183' and ItemID = '700'  
 select * from tableau.Kanban where LocationID = 'B6183' and ItemID = '700' and convert(Date,[Date]) = convert(Date,getdate()-1)
 update bluebin.DimBinHistory set LastUpdated = getdate() -3 where DimBinHistoryID = 6161
@@ -3442,9 +4033,10 @@ BEGIN
 insert into bluebin.DimBinHistory ([Date],BinKey,FacilityID,LocationID,ItemID,BinQty,BinUOM,[Sequence],LastBinQty,LastBinUOM,[LastSequence]) 
 select convert(Date,getdate()-1),db.BinKey,db.BinFacility,db.LocationID,db.ItemID,convert(int,db.BinQty),db.BinUOM,db.BinSequence,ISNULL(dbh.BinQty,0),ISNULL(dbh.BinUOM,'N/A'),ISNULL(dbh.Sequence,'N/A')
 from bluebin.DimBin db
-left join bluebin.DimBinHistory dbh on db.BinFacility = dbh.FacilityID and db.LocationID = dbh.LocationID and db.ItemID = dbh.ItemID and dbh.[Date] = convert(Date,getdate()-2)
-END
+left join 
+	(select distinct [Date],BinKey,FacilityID,LocationID,ItemID,BinQty,BinUOM,[Sequence] from bluebin.DimBinHistory where [Date] = convert(Date,getdate()-2)) dbh on db.BinFacility = dbh.FacilityID and db.LocationID = dbh.LocationID and db.ItemID = dbh.ItemID
 
+END
 
 
 GO
@@ -3455,6 +4047,7 @@ WHERE StepName = 'DimBinHistory'
 GO
 grant exec on etl_DimBinHistory to public
 GO
+
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
@@ -4279,7 +4872,610 @@ GO
 grant exec on tb_WarehouseHistory to public
 GO
 
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
 
+IF EXISTS ( SELECT  *
+            FROM    sys.objects
+            WHERE   object_id = OBJECT_ID(N'tb_TimeStudyStrider')
+                    AND type IN ( N'P', N'PC' ) ) 
+
+--exec tb_TimeStudyStrider
+DROP PROCEDURE  tb_TimeStudyStrider
+GO
+
+CREATE PROCEDURE tb_TimeStudyStrider
+
+AS
+BEGIN
+SET NOCOUNT ON
+
+/* CTE Table */
+Declare @StriderActivityTimes TABLE ( Activity varchar(100),FacilityID int,BlueBinResourceID int, ResourceName varchar(50),AvgS DECIMAL(10,2), AvgM DECIMAL(10,2), AvgH DECIMAL(10,2), LastUpdated date)
+
+/* Bin Fill */
+INSERT INTO @StriderActivityTimes
+select 
+'Bin Fill' as Activity,
+c.FacilityID,
+c.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem from bluebin.TimeStudyBinFill where MostRecent = 1) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem from bluebin.TimeStudyBinFill where MostRecent = 0) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		inner join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID 
+		group by c.FacilityID,c.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+		
+/* Node Service */
+INSERT INTO @StriderActivityTimes
+select 
+'NodeService' as Activity,
+c.FacilityID,
+c.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID = (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue = 'Node service time') 
+			and MostRecent = 1) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID = (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue = 'Node service time')
+			and MostRecent = 0) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		inner join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID 
+		group by c.FacilityID,c.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+
+/* Travel Times All */
+INSERT INTO @StriderActivityTimes
+select 
+'TravelTimeAll' as Activity,
+c.FacilityID,
+c.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage','Travel time to next node','Leave Stage to enter node')) 
+			and MostRecent = 1) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage','Travel time to next node','Leave Stage to enter node'))
+			and MostRecent = 0) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		inner join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID 
+		group by c.FacilityID,c.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+
+/* Travel Times To Stage */
+INSERT INTO @StriderActivityTimes
+select 
+'TravelTimeToStage' as Activity,
+c.FacilityID,
+c.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage')) 
+			and MostRecent = 1) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage'))
+			and MostRecent = 0) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		inner join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID 
+		group by c.FacilityID,c.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+
+
+/* Travel Times Next Node */
+INSERT INTO @StriderActivityTimes
+select 
+'TravelTimeNextNode' as Activity,
+c.FacilityID,
+c.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel time to next node')) 
+			and MostRecent = 1) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel time to next node'))
+			and MostRecent = 0) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		inner join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID 
+		group by c.FacilityID,c.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+
+/* Travel Times From Stage */
+INSERT INTO @StriderActivityTimes
+select 
+'TravelTimeFromStage' as Activity,
+c.FacilityID,
+c.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Leave Stage to enter node')) 
+			and MostRecent = 1) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Leave Stage to enter node'))
+			and MostRecent = 0) as b
+			group by FacilityID,BlueBinResourceID
+		) as c
+		inner join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID 
+		group by c.FacilityID,c.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+
+
+
+
+declare @ReturnsBinTH DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Returns Bins Threshhold')--default is Bin #s
+
+
+
+
+
+/* Returns Bins Small */
+INSERT INTO @StriderActivityTimes
+select 
+'Returns Bins Small' as Activity,
+c.FacilityID,df.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time')) 
+			and MostRecent = 1
+			and SKUS <= @ReturnsBinTH) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time'))
+			and MostRecent = 0
+			and SKUS <=@ReturnsBinTH) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		right join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID
+		 
+		group by c.FacilityID,df.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+		 
+/* Returns Bins Large */
+
+INSERT INTO @StriderActivityTimes
+select 
+'Returns Bins Large' as Activity,
+c.FacilityID,
+df.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time')) 
+			and MostRecent = 1
+			and SKUS > @ReturnsBinTH) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time'))
+			and MostRecent = 0
+			and SKUS > @ReturnsBinTH) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		right join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID
+		 
+		group by c.FacilityID,df.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+
+
+
+/* Double Bin StockOut Sweep*/
+
+INSERT INTO @StriderActivityTimes
+select 
+'Double Bin StockOut Sweep' as Activity,
+c.FacilityID,
+c.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Write down Item numbers and sweep Stage')) 
+			and MostRecent = 1) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Write down Item numbers and sweep Stage'))
+			and MostRecent = 0) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		inner join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID 
+		group by c.FacilityID,c.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+
+/* Double Bin StockOut Key out */
+
+INSERT INTO @StriderActivityTimes
+select 
+'Double Bin StockOut Key out' as Activity,
+c.FacilityID,
+c.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Key out MSR')) 
+			and MostRecent = 1) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Key out MSR'))
+			and MostRecent = 0) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		inner join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID 
+		group by c.FacilityID,c.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+
+
+/* Double Bin StockOut Pick Items */
+
+INSERT INTO @StriderActivityTimes
+select 
+'Double Bin StockOut Pick Items' as Activity,
+c.FacilityID,
+c.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Pick Items')) 
+			and MostRecent = 1) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Pick Items'))
+			and MostRecent = 0) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		inner join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID 
+		group by c.FacilityID,c.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+
+
+/* Double Bin StockOut Deliver Items */
+
+INSERT INTO @StriderActivityTimes
+select 
+'Double Bin StockOut Deliver Items' as Activity,
+c.FacilityID,
+c.BlueBinResourceID,
+df.LastName + ', ' + df.FirstName as ResourceName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Deliver Items')) 
+			and MostRecent = 1
+			) as a
+			group by FacilityID,BlueBinResourceID
+		UNION 
+		select FacilityID,BlueBinResourceID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,BlueBinResourceID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Deliver Items'))
+			and MostRecent = 0) as b
+			group by FacilityID,BlueBinResourceID
+		) as c 
+		inner join bluebin.BlueBinResource df on c.BlueBinResourceID = df.BlueBinResourceID 
+		group by c.FacilityID,c.BlueBinResourceID,df.LastName + ', ' + df.FirstName
+/* Double Bin StockOut All */
+
+INSERT INTO @StriderActivityTimes
+select 
+'Double Bin StockOut All' as Activity,
+FacilityID,
+BlueBinResourceID,
+ResourceName,
+SUM(AvgS) as AvgS,
+SUM(AvgM) as AvgS,
+SUM(AvgH) as AvgS,
+convert(Date,getdate()) as LastUpdated
+from @StriderActivityTimes
+where Activity like 'Double Bin%'
+group by
+FacilityID,
+BlueBinResourceID,
+ResourceName
+
+select 
+sat.Activity,
+sat.FacilityID,
+df.FacilityName,
+sat.BlueBinResourceID,
+sat.ResourceName,
+sat.AvgS as ResourceAvgS,
+fat.AvgS as OverallAvgS,
+sat.AvgS - fat.AvgS as DifferenceAvgS,
+
+sat.AvgM as ResourceAvgM,
+fat.AvgM as OverallAvgM,
+sat.AvgM - fat.AvgM as DifferenceAvgM,
+
+sat.AvgH as ResourceAvgH,
+fat.AvgH as OverallAvgH,
+sat.AvgH - fat.AvgH as DifferenceAvgH,
+sat.LastUpdated
+ 
+from @StriderActivityTimes sat
+inner join bluebin.FactActivityTimes fat on sat.Activity = fat.Activity and sat.FacilityID = fat.FacilityID
+inner join bluebin.DimFacility df on sat.FacilityID = df.FacilityID
+where sat.AvgS is not null
+order by sat.ResourceName,fat.Activity
+
+END
+GO
+
+grant exec on tb_TimeStudyStrider to public
+GO
+
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
+IF EXISTS ( SELECT  *
+            FROM    sys.objects
+            WHERE   object_id = OBJECT_ID(N'tb_TimeStudyAverages')
+                    AND type IN ( N'P', N'PC' ) ) 
+
+--exec tb_TimeStudyAverages
+DROP PROCEDURE  tb_TimeStudyAverages
+GO
+
+CREATE PROCEDURE tb_TimeStudyAverages
+
+AS
+BEGIN
+SET NOCOUNT ON
+
+declare @TodaysOrders TABLE ([Date] datetime,FacilityID int,FacilityName varchar(50),LocationID varchar(10),LocationName varchar(50),TodaysLines int)
+declare @TodaysPicks TABLE ([Date] datetime,FacilityID int,FacilityName varchar(50),LocationID varchar(10),LocationName varchar(50),Picks int)
+declare @StockOuts TABLE ([Date] datetime,FacilityID int,FacilityName varchar(50),LocationID varchar(10),LocationName varchar(50),StockOuts int)
+declare @Groups TABLE (FacilityID int,LocationID varchar(10),GroupName varchar(50))
+/*
+--Alternate Todays Orders based on sproc and FactScan
+declare @TodaysOrders TABLE ([Date] datetime,FacilityID int,FacilityName varchar(50),LocationID varchar(10),LocationName varchar(50),TodaysLines int,YesLines int,Trend varchar(10))
+insert into @TodaysOrders
+EXEC tb_TodaysOrders
+*/
+/* Todays Orders Table */
+insert into @TodaysOrders
+--EXEC tb_TodaysOrders
+select
+[Date],
+FacilityID,
+FacilityName,
+LocationID,
+LocationName,
+ISNULL(SUM(Scan),0) as TodaysLines 
+from tableau.Kanban
+where [Date] = (select max(Date) from tableau.Kanban) 
+group by 
+[Date],
+FacilityID,
+FacilityName,
+LocationID,
+LocationName
+
+
+/* Todays Picks Table */
+insert into @TodaysPicks
+select
+[Date],
+FacilityID,
+FacilityName,
+LocationID,
+LocationName,
+ISNULL(SUM(Scan),0) as Picks  
+from tableau.Kanban
+where [Date] = (select max(Date) from tableau.Kanban) and ItemType in ('I','MSR')
+group by 
+[Date],
+FacilityID,
+FacilityName,
+LocationID,
+LocationName
+
+
+
+/* Todays StockOuts Table */
+insert into @StockOuts
+select
+[Date],
+FacilityID,
+FacilityName,
+LocationID,
+LocationName,
+ISNULL(SUM(StockOut),0) as StockOuts  
+from tableau.Kanban
+where [Date] = (select max(Date) from tableau.Kanban)
+group by 
+[Date],
+FacilityID,
+FacilityName,
+LocationID,
+LocationName
+
+/* Todays StockOuts Table */
+insert into @Groups
+select
+FacilityID,
+LocationID,
+GroupName 
+from bluebin.TimeStudyGroup
+
+
+/*
+--Parameter based entries that were based on no FacilityID
+Declare @BinFill DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'Bin Fill')
+Declare @NodeService DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'NodeService')
+Declare @TravelTimeAll DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'TravelTimeAll')
+Declare @ScanningBin DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'Scanning Bin')
+Declare @ReturnsBinsSmall DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'Returns Bins Small')
+Declare @ReturnsBinsLarge DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'Returns Bins Large')
+Declare @DoubleBinStockOutAll DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'Double Bin StockOut All')
+Declare @ScanningTime DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'Scanning Time')
+Declare @ScanningNew DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'Scanning New')
+Declare @ScanningMove DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'Scanning Move')
+Declare @StoreroomPickLines DECIMAL(10,2) = (select FacilityID,AvgM from bluebin.FactActivityTimes where Activity = 'Storeroom Pick Lines')
+*/
+declare @ReturnsBinTH DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Returns Bins Threshhold')--default is Bin #s
+
+select 
+*
+,case when TodaysLines = 0 then 0 else (BinFill + TravelTime + NodeService + ReturnsBins + StockOutTime + Scanning + PickTime) end as TotalTimeM
+,case when TodaysLines = 0 then 0 else (BinFill + TravelTime + NodeService + ReturnsBins + StockOutTime + Scanning + PickTime)/60 end  as TotalTimeH
+from 
+(
+select 
+t.[Date],
+t.FacilityID,
+t.FacilityName,
+t.LocationID,
+t.LocationName,
+ISNULL(g.GroupName,'None') as GroupName,
+ISNULL(t.TodaysLines,0) as TodaysLines,
+ISNULL(t.TodaysLines * (select AvgM from bluebin.FactActivityTimes where Activity = 'Bin Fill' and FacilityID = t.FacilityID),0) as BinFill,
+ISNULL((select AvgM from bluebin.FactActivityTimes where Activity = 'TravelTimeAll' and FacilityID = t.FacilityID),0)  as TravelTime,
+ISNULL(t.TodaysLines * (select AvgM from bluebin.FactActivityTimes where Activity = 'NodeService' and FacilityID = t.FacilityID),0)  as NodeService,
+case when t.TodaysLines > @ReturnsBinTH then ISNULL((select AvgM from bluebin.FactActivityTimes where Activity = 'Returns Bins Large' and FacilityID = t.FacilityID),0)  else ISNULL((select AvgM from bluebin.FactActivityTimes where Activity = 'Returns Bins Small' and FacilityID = t.FacilityID),0) end as ReturnsBins,
+ISNULL(s.StockOuts,0) as StockOuts,
+ISNULL(s.StockOuts * (select AvgM from bluebin.FactActivityTimes where Activity = 'Double Bin StockOut All' and FacilityID = t.FacilityID),0) as StockOutTime,
+ISNULL((t.TodaysLines * (select AvgM from bluebin.FactActivityTimes where Activity = 'Scanning Bin' and FacilityID = t.FacilityID))+ (select AvgM from bluebin.FactActivityTimes where Activity = 'Scanning Move' and FacilityID = t.FacilityID),0) as Scanning,
+ISNULL(p.Picks,0) as StoreroomPickLines,
+ISNULL(p.Picks,0) * (select AvgM from bluebin.FactActivityTimes where Activity = 'Storeroom Pick Lines' and FacilityID = t.FacilityID) as PickTime
+
+from @TodaysOrders t
+left join @TodaysPicks p on t.FacilityID = p.FacilityID and t.LocationID = p.LocationID
+left join @StockOuts s on t.FacilityID = s.FacilityID and t.LocationID = s.LocationID
+left join @Groups g on t.FacilityID = g.FacilityID and t.LocationID = g.LocationID
+--left join bluebin.FactActivityTimes fat on t.FacilityID = fat.FacilityID
+) as  a
+
+order by FacilityID,LocationID
+
+END
+GO
+
+grant exec on tb_TimeStudyAverages to public
+GO
+
+if not exists (select * from sys.tables where name = 'FactActivityTimes')
+BEGIN
+exec etl_FactActivityTimes
+
+END
+GO
 
 
 Print 'Tableau (tb) sprocs updated'

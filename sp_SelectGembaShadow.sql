@@ -14,13 +14,13 @@ BEGIN
 SET NOCOUNT ON
 	SELECT 
 		BlueBinResourceID,
-		LastName + ', ' + FirstName + ' (' + Login + ')' as FullName 
+		LastName + ', ' + FirstName as FullName 
 	
 	FROM [bluebin].[BlueBinResource] 
 	
 	WHERE 
 		Title in (Select ConfigValue from bluebin.Config where ConfigName = 'GembaShadowTitle')
-		order by 1
+		order by 2
 END
 GO
 grant exec on sp_SelectGembaShadow to appusers

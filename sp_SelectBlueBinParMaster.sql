@@ -18,7 +18,7 @@ select
 bbpm.[ParMasterID],
 bbpm.[FacilityID],
 bbf.[FacilityName],
-rtrim(bbpm.[LocationID]) as LocationID,
+bbpm.[LocationID] as LocationID,
 ISNULL((rtrim(bblm.[LocationName])),'') as LocationName,
 rtrim(bbpm.[ItemID]) as ItemID,
 ISNULL((COALESCE(bbim.ItemClinicalDescription,bbim.ItemDescription,'None')),'') as ItemDescription,

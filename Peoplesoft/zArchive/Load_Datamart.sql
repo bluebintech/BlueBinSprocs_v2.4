@@ -245,16 +245,6 @@ Row_number()
 INTO tmpOrders
 FROM   AllOrders 
 
-GO
-
-BEGIN Try
-    DROP TABLE FactScan
-END Try
-
-BEGIN Catch
-END Catch
-
-Go
 
 WITH Scans
      AS (SELECT Row_number()
@@ -308,7 +298,7 @@ SELECT a.Scanseq,
               AND a.ScanHistSeq > 2 THEN 1
          ELSE 0
        END                     AS StockOut
-INTO FactScan
+--INTO FactScan
 FROM   Scans a
        LEFT JOIN Scans b
               ON a.BinKey = b.BinKey

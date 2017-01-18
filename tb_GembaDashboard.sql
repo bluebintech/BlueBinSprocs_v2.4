@@ -1,3 +1,8 @@
+
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_GembaDashboard') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_GembaDashboard
 GO
@@ -5,10 +10,19 @@ GO
 --exec tb_GembaDashboard 
 CREATE PROCEDURE tb_GembaDashboard
 
+
 --WITH ENCRYPTION
 AS
 BEGIN
 SET NOCOUNT ON
+
+declare @GembaIdentifier varchar(50)
+select @GembaIdentifier = ConfigValue from bluebin.Config where ConfigName = 'GembaIdentifier'
+
+if @GembaIdentifier = '' 
+BEGIN
+set @GembaIdentifier = 'XXXXX'
+END
 
 select 
 	g.[GembaAuditNodeID],
@@ -46,7 +60,14 @@ select
 		when g.[Date] is null and tier3.[MaxDate] is null  or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier3')) then 365
 		else convert(int,(getdate() - tier3.[MaxDate])) end as LastAuditTier3,
 		
-    g.[LastUpdated]
+    g.[LastUpdated],
+	PS_Comments,
+	RS_Comments,
+	NIS_Comments,
+	SS_Comments,
+	AdditionalComments,
+	case
+		when AdditionalComments like '%'+ @GembaIdentifier + '%' then 'Yes' else 'No' end as GembaIdent
 from  [bluebin].[DimLocation] dl
 		left join [gemba].[GembaAuditNode] g on dl.LocationID = g.LocationID
 		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] group by LocationID) g2 on dl.LocationID = g2.LocationID and g.[Date] = g2.MaxDate

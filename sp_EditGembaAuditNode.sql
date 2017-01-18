@@ -67,7 +67,7 @@ Update [gemba].[GembaAuditNode] SET
            ,[RS_BinServices] = @RS_BinServices
            ,[RS_NodeSwept] = @RS_NodeSwept
            ,[RS_NodeCorrections] = @RS_NodeCorrections
-           ,[RS_ShadowedUserID] = (select BlueBinResourceID from bluebin.BlueBinResource where LastName + ', ' + FirstName + ' (' + Login + ')' = @RS_ShadowedUser)
+           ,[RS_ShadowedUserID] = (select BlueBinResourceID from bluebin.BlueBinResource where LastName + ', ' + FirstName  = @RS_ShadowedUser)
            ,[RS_Comments] = @RS_Comments
            ,[SS_Supplied] = @SS_Supplied
 		   ,[SS_KanbansPP] = @SS_KanbansPP

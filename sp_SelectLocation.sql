@@ -16,7 +16,7 @@ SET NOCOUNT ON
 
 SELECT 
 LocationFacility as FacilityID,
-LocationID,
+rtrim(LocationID) as LocationID,
 --LocationName,
 case when LocationID = LocationName then LocationID else LocationID + ' - ' + [LocationName] end as LocationName 
 FROM [bluebin].[DimLocation] where BlueBinFlag = 1

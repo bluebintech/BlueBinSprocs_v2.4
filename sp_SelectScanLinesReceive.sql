@@ -22,7 +22,7 @@ select
 sbr.ScanBatchID,
 db.BinKey,
 db.BinSequence,
-rtrim(sbr.LocationID) as LocationID,
+sbr.LocationID as LocationID,
 dl.LocationName as LocationName,
 slr.ItemID,
 di.ItemDescription,

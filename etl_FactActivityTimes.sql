@@ -28,6 +28,7 @@ AS
  END CATCH
 
  /*******************************	CREATE FactActivityTimes	*********************************/
+ SET NOCOUNT ON
 
 /* CTE Table */
 Declare @FactActivityTimes TABLE ( Activity varchar(100),FacilityID int, FacilityName varchar(50),AvgS DECIMAL(10,2), AvgM DECIMAL(10,2), AvgH DECIMAL(10,2), LastUpdated date)

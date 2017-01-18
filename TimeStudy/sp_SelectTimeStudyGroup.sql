@@ -32,7 +32,7 @@ inner join bluebin.DimLocation dl on t.LocationID = dl.LocationID and t.Facility
 inner join bluebin.DimFacility df on t.FacilityID = df.FacilityID
 where t.Active = 1
 and df.FacilityName like '%' + @FacilityName + '%'
-and dl.LocationName like '%' + @LocationName + '%'
+and (dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' or t.LocationID like '%' + @LocationName + '%')
 and t.GroupName like '%' + @GroupName + '%'
 
 END

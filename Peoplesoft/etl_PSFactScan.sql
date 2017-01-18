@@ -33,6 +33,7 @@ END Catch
 
 --**************************
 declare @DefaultLT int = (Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime')
+declare @POTimeAdjust int = (Select max(ConfigValue) from bluebin.Config where ConfigName = 'PS_POTimeAdjust')
 ;
 WITH FirstScans
      AS (SELECT INV_CART_ID      AS LocationID,
@@ -45,7 +46,8 @@ WITH FirstScans
                    INV_ITEM_ID),
 --**************************
 Orders
-     AS (SELECT Row_number()
+     AS (
+	 SELECT Row_number()
                   OVER(
                     PARTITION BY PO_LN.INV_ITEM_ID, PO_LN_DST.LOCATION, PO_HDR.PO_DT
                     ORDER BY PO_LN.PO_ID, PO_LN.LINE_NBR) AS DailySeq,
@@ -58,7 +60,7 @@ Orders
                 RECEIPT_DTTM                              AS CloseDate,
                 QTY_PO                                    AS OrderQty,
                 PO_LN.UNIT_OF_MEASURE                     AS OrderUOM,
-                PO_HDR.PO_DT
+                DATEADD(hour,@POTimeAdjust,PO_HDR.PO_DT) as PO_DT
          FROM   dbo.PO_LINE_DISTRIB PO_LN_DST
                 INNER JOIN dbo.PO_LINE PO_LN
                         ON PO_LN_DST.PO_ID = PO_LN.PO_ID
@@ -79,6 +81,7 @@ Orders
                 AND PO_LN.CANCEL_STATUS NOT IN ( 'X', 'D' )
                 --AND PO_LN_DST.BUSINESS_UNIT_GL = 209
 				)
+				
 				,
 
 
@@ -93,8 +96,9 @@ CartCounts
                 INV_ITEM_ID					   AS ItemID,
                 DEMAND_DATE                    AS PO_DT,
                 LAST_DTTM_UPDATE               AS SCAN_DATE
+				--CART_COUNT_QTY
          FROM   dbo.CART_CT_INF_INV
-         WHERE  --CART_COUNT_QTY <> 0
+         WHERE  --CART_COUNT_QTY <> 0 AND
                 --AND CART_REPLEN_OPT = '02'
 				(LEFT(INV_CART_ID, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
 				or INV_CART_ID COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))),
@@ -106,12 +110,12 @@ SELECT a.BinKey,
        a.LocationID,
        a.OrderNum,
        a.LineNum,
-       b.SCAN_DATE                 AS OrderDate,
+       COALESCE(b.SCAN_DATE,a.PO_DT)                 AS OrderDate,
        a.CloseDate,
        a.OrderQty,
        a.OrderUOM
 FROM   Orders a
-       INNER JOIN CartCounts b
+       LEFT JOIN CartCounts b
                ON a.LocationID = b.LocationID
                   AND a.ItemID = b.ItemID
                   AND a.PO_DT = b.PO_DT
@@ -231,9 +235,11 @@ WHERE  a.OrderDate >= db.BinGoLiveDate --and a.OrderDate > getdate() -360--and d
 Order by BinKey,ScanHistseq asc
 
 
+
 GO
 
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'FactScan'
 
+GO
