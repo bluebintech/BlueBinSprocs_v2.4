@@ -109,11 +109,11 @@ a.COMPANY,
 		END AS REQ_NUMBER,
        a.SRC_LINE_NBR                                                                         AS LINE_NBR,
        MIN(Cast(CONVERT(VARCHAR, b.REC_DATE, 101) + ' '
-			+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, case when b.UPDATE_TIME is null then '00000000' else b.UPDATE_TIME end), 8), 2)
+			+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, ISNULL(b.UPDATE_TIME,'00000000')), 6), 2)
             + ':'
-            + Substring(RIGHT('00000' + CONVERT(VARCHAR, case when b.UPDATE_TIME is null then '00000000' else b.UPDATE_TIME end), 8), 3, 2)
+            + Substring(RIGHT('00000' + CONVERT(VARCHAR, ISNULL(b.UPDATE_TIME,'00000000')), 6), 3, 2)
             + ':'
-            + Substring(RIGHT('00000' + CONVERT(VARCHAR, case when b.UPDATE_TIME is null then '00000000' else b.UPDATE_TIME end), 8), 5, 2) AS DATETIME)) AS REC_DATE
+            + Substring(RIGHT('00000' + CONVERT(VARCHAR, ISNULL(b.UPDATE_TIME,'00000000')), 6), 5, 2) AS DATETIME)) AS REC_DATE
 
 INTO #POLINE
 FROM   POLINESRC a

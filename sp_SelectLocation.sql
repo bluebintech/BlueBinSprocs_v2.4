@@ -18,7 +18,7 @@ SELECT
 LocationFacility as FacilityID,
 rtrim(LocationID) as LocationID,
 --LocationName,
-case when LocationID = LocationName then LocationID else LocationID + ' - ' + [LocationName] end as LocationName 
+case when LocationID = LocationName then LocationID else rtrim([LocationName]) + ' - ' + LocationID end as LocationName 
 FROM [bluebin].[DimLocation] where BlueBinFlag = 1
 
 order by LocationID

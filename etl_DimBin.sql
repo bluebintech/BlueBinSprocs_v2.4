@@ -128,8 +128,7 @@ SELECT Row_number()
            #BinAddDates.BinAddedDate                                                                  AS BinGoLiveDate,
            COALESCE(COALESCE(#ItemReqs.UNIT_COST, #ItemOrders.ENT_UNIT_CST), #ItemStore.LAST_ISS_COST) AS BinCurrentCost,
            CASE
-             WHEN ltrim(rtrim(ITEMLOC.USER_FIELD1)) = 'Consignment' THEN 'Y'
-			 WHEN UPPER(ltrim(rtrim(ITEMLOC.USER_FIELD1))) = 'CONSIGNMENT' OR #Consignment.CONSIGNMENT_FL = 'Y'  THEN 'Y'
+			 WHEN UPPER(ltrim(rtrim(ITEMLOC.USER_FIELD1))) in (Select ConfigValue from bluebin.Config where ConfigName = 'ConsignmentFlag') OR #Consignment.CONSIGNMENT_FL = 'Y'  THEN 'Y'
              ELSE 'N'
            END                                                                                        AS BinConsignmentFlag,
            #ItemAccounts.ISS_ACCOUNT                                                                  AS BinGLAccount,

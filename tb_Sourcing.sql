@@ -38,7 +38,7 @@ SELECT a.COMPANY,
        a.AGREEMENT_REF,
        a.ENT_UNIT_CST,
        a.ENT_BUY_UOM,
-       a.EBUY_UOM_MULT,
+       case when a.EBUY_UOM_MULT < 1 then 1 else a.EBUY_UOM_MULT end as EBUY_UOM_MULT,
        b.PO_DATE,
        a.EARLY_DL_DATE,
        a.LATE_DL_DATE,
@@ -78,7 +78,7 @@ WHERE  b.PO_DATE >= (select ConfigValue from bluebin.Config where ConfigName = '
 		--AND b.PO_RELEASE = 0
        AND a.CXL_QTY = 0
 	   
-	   --and a.PO_NUMBER like '%380479%'
+	   --and a.PO_NUMBER like '%593273%'
 
 
 --#tmpMMDIST
@@ -97,7 +97,7 @@ WHERE  SYSTEM_CD = 'PO'
        AND a.DOC_NUMBER IN (SELECT PO_NUMBER
                           FROM   PURCHORDER
                           WHERE  PO_DATE >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE'))
-						  --and a.DOC_NUMBER like '%380479%'
+						  --and a.DOC_NUMBER like '%593273%'
 						  --and a.DOC_NUMBER like '%389266%' order by 2
 
 

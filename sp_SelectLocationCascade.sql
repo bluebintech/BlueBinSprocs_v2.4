@@ -5,7 +5,7 @@ if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectLocation
 drop procedure sp_SelectLocationCascade
 GO
 
---exec sp_SelectLocationCascade 'No'
+--exec sp_SelectLocationCascade 'Yes'
 
 CREATE PROCEDURE sp_SelectLocationCascade
 @Multiple varchar(3)
@@ -28,13 +28,14 @@ SELECT
 LocationFacility as FacilityID,
 LocationID,
 --LocationName,
-case when LocationID = LocationName then LocationID else LocationID + ' - ' + [LocationName] end as LocationName 
+case when LocationID = LocationName then LocationID else rtrim([LocationName]) + ' - ' +  LocationID end as LocationName 
 
 FROM [bluebin].[DimLocation] where BlueBinFlag = 1
 UNION ALL 
 select distinct LocationFacility as FacilityID,'','--Select--' FROM [bluebin].[DimLocation] where BlueBinFlag = 1
 UNION ALL 
-select distinct LocationFacility as FacilityID,@MultipleID,@MultipleName FROM [bluebin].[DimLocation] where BlueBinFlag = 1) as a
+select distinct LocationFacility as FacilityID,@MultipleID,@MultipleName FROM [bluebin].[DimLocation] where BlueBinFlag = 1
+) as a
 order by LocationID
 END
 GO

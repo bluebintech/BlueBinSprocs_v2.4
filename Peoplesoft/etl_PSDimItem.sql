@@ -44,7 +44,15 @@ SELECT Row_number()
        a.INV_ITEM_ID               AS ItemID,
        DESCR                       AS ItemDescription,
 	   ''							AS ItemDescription2,--****
-	   DESCR                       AS ItemClinicalDescription,--****
+	   --DESCR                       AS ItemClinicalDescription,--****
+	   case when @UseClinicalDescription = 1 then
+			case 
+				when bn.INV_BRAND_NAME is null or bn.INV_BRAND_NAME = ''  then
+						case 
+							when DESCR is null or DESCR = '' then '*NEEDS*' 
+							else DESCR end 
+			else bn.INV_BRAND_NAME end 
+		else DESCR end as ItemClinicalDescription,
 	   'A'							AS ActiveStatus,--****
        b.MFG_ID                    AS ItemManufacturer,
        b.MFG_ITM_ID                AS ItemManufacturerNumber,
@@ -67,6 +75,9 @@ FROM   dbo.MASTER_ITEM_TBL a
                  AND c.ITM_VNDR_PRIORITY = 1
        LEFT JOIN dbo.VENDOR d
               ON c.VENDOR_ID COLLATE DATABASE_DEFAULT = d.VENDOR_ID 
+	   left join BRAND_NAMES_INV bn on a.INV_ITEM_ID = bn.INV_ITEM_ID
+
+--select count(*) select * from bluebin.DimItem where ItemID = '1000250'
 GO
 --exec etl_DimItem
 

@@ -30,9 +30,8 @@ END CATCH
 
 
 /***********************************		CREATE	DimBin		***********************************/
-declare @Facility int, @UsePriceList int
+declare @Facility int
    select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
-   select @UsePriceList = ConfigValue from bluebin.Config where ConfigName = 'PS_UsePriceList'
  
 
 
@@ -64,12 +63,7 @@ SELECT Row_number()
 	   
 		--bu.LAST_PRICE_PAID AS BinCurrentCost,
   --     bu.CONSIGNED_FLAG AS BinConsignmentFlag,
-		CASE
-			When @UsePriceList = 1 then
-			COALESCE(bu.PRICE_LIST,bu.LAST_PRICE_PAID,bu.LAST_PO_PRICE_PAID,0)
-			Else
-			COALESCE(bu.LAST_PRICE_PAID,bu.LAST_PO_PRICE_PAID,bu.PRICE_LIST,0) 
-			end AS BinCurrentCost,
+		COALESCE(bu.LAST_PRICE_PAID,bu.LAST_PO_PRICE_PAID,bu.PRICE_LIST,0) AS BinCurrentCost,
        COALESCE(bu.CONSIGNED_FLAG_BU,bu.CONSIGNED_FLAG_M,'N') AS BinConsignmentFlag,
        '' AS BinGLAccount,
 	   'Awaiting Updated Status'						 AS BinCurrentStatus
@@ -86,7 +80,7 @@ FROM
 	c.UNIT_OF_MEASURE
 	
 	 from dbo.CART_TEMPL_INV c
-	 inner join (select INV_CART_ID, INV_ITEM_ID, max(ISNULL(COUNT_ORDER,1)) as COUNT_ORDER from CART_TEMPL_INV where COUNT_ORDER is not null 
+	 inner join (select INV_CART_ID, INV_ITEM_ID, max(ISNULL(COUNT_ORDER,1)) as COUNT_ORDER from CART_TEMPL_INV --where COUNT_ORDER is not null 
 	 --and LEN(COMPARTMENT) >=6 
 	 group by INV_CART_ID, INV_ITEM_ID) a 
 		on c.INV_CART_ID = a.INV_CART_ID and c.INV_ITEM_ID = a.INV_ITEM_ID and ISNULL(c.COUNT_ORDER,1) = a.COUNT_ORDER
@@ -110,7 +104,7 @@ FROM
 			m.INV_ITEM_ID
 			,case when bu.LAST_PRICE_PAID = 0 then NULL else bu.LAST_PRICE_PAID end as LAST_PRICE_PAID
 			,case when p.LAST_PO_PRICE_PAID = 0 then NULL else p.LAST_PO_PRICE_PAID end as LAST_PO_PRICE_PAID
-			,case when p.PRICE_LIST = 0 then NULL else p.PRICE_LIST end as PRICE_LIST
+			,p.PRICE_LIST
 			,bu.CONSIGNED_FLAG as CONSIGNED_FLAG_BU
 			,m.CONSIGNED_FLAG as CONSIGNED_FLAG_M
 

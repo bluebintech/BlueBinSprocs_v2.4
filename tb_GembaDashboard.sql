@@ -28,7 +28,7 @@ select
 	g.[GembaAuditNodeID],
 	df.FacilityName,
 	dl.[LocationID],
-	g.LocationID as AuditLocationID,
+	dl.LocationID as AuditLocationID,
         dl.[LocationName],
 			dl.BlueBinFlag,
 	u.LastName + ', ' + u.FirstName  as Auditer,
@@ -77,13 +77,14 @@ from  [bluebin].[DimLocation] dl
         --left join [bluebin].[DimLocation] dl on g.LocationID = dl.LocationID and dl.BlueBinFlag = 1
 		left join [bluebin].[BlueBinUser] u on g.AuditerUserID = u.BlueBinUserID
 		left join bluebin.BlueBinRoles bbr on u.RoleID = bbr.RoleID
-		left join bluebin.DimFacility df on g.FacilityID = df.FacilityID
-WHERE dl.BlueBinFlag = 1 and g.Active = 1
+		left join bluebin.DimFacility df on dl.LocationFacility = df.FacilityID
+WHERE dl.BlueBinFlag = 1 and (g.Active = 1 or g.Active is null)
             order by dl.LocationID,[Date] asc
 
 END
 GO
 grant exec on tb_GembaDashboard to public
 GO
+
 
 

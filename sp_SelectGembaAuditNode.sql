@@ -5,7 +5,7 @@ if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAud
 drop procedure sp_SelectGembaAuditNode
 GO
 
---exec sp_SelectGembaAuditNode '%','%','%'
+--exec sp_SelectGembaAuditNode '%','DW001','%'
 
 CREATE PROCEDURE sp_SelectGembaAuditNode
 @FacilityName varchar(50),
@@ -22,7 +22,8 @@ SET NOCOUNT ON
 	df.FacilityName,
 	case
 		when dl.LocationID = dl.LocationName then dl.LocationID
-		else dl.LocationID + ' - ' + dl.[LocationName] end as LocationName,
+		else rtrim(dl.[LocationName]) + ' - ' +  dl.LocationID end as LocationName,
+		--else dl.LocationID + ' - ' + dl.[LocationName] end as LocationName,
 	u.LastName + ', ' + u.FirstName as Auditer,
     u.UserLogin as AuditerLogin,
     q.PS_TotalScore as [Pull Score],
@@ -35,11 +36,11 @@ SET NOCOUNT ON
     q.LastUpdated
 from [gemba].[GembaAuditNode] q
 inner join bluebin.DimFacility df on q.FacilityID = df.FacilityID
-inner join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and dl.BlueBinFlag = 1
+inner join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and q.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
 inner join [bluebin].[BlueBinUser] u on q.AuditerUserID = u.BlueBinUserID
     Where q.Active = 1 
 	and df.[FacilityName] LIKE '%' + @FacilityName + '%' 
-	and dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' 
+	and rtrim(dl.[LocationName]) + ' - ' +  dl.LocationID LIKE '%' + @LocationName + '%'
 	and u.LastName + ', ' + u.FirstName LIKE '%' + @Auditer + '%'
 	order by q.Date desc
 

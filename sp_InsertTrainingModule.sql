@@ -2,7 +2,7 @@ if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertTraining
 drop procedure sp_InsertTrainingModule
 GO
 
---exec sp_InsertTrainingModule '',''
+--exec sp_InsertTrainingModule 'DMS User Guide','Acknowledgement of DMS Application User Guide Review','0'
 --select * from bluebin.TrainingModule
 
 CREATE PROCEDURE sp_InsertTrainingModule 

@@ -449,6 +449,7 @@ END
 if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-%')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
+('OP-Stat Calls Detail','1',1,getdate(),'Reports','Setting for whether to display the Stat Calls Detail'),
 ('OP-Pick Line Volume','1',1,getdate(),'Reports','Setting for whether to display the Pick Line Volume Report'),
 ('OP-Supply Spend','1',1,getdate(),'Reports','Setting for whether to display the Supply Spend Report'),
 ('OP-Overall Line Volume','1',1,getdate(),'Reports','Setting for whether to display the Overall Line Volume Report'),

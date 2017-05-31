@@ -50,7 +50,7 @@ where
 ScanHistseq > (select ConfigValue from bluebin.Config where ConfigName = 'ScanThreshold') and 
 OrderCloseDate is null and 
 OrderDate is not null --and p.PO_NUMBER is Null and ItemType = 'N'
-
+and p.REQ_ID <> '0'
 group by
 OrderNum,
 p.REQ_ID,

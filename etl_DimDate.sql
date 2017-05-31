@@ -1,4 +1,9 @@
 
+/********************************************************
+
+		DimDate
+
+********************************************************/
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -56,7 +61,7 @@ AS
          [DateKey] INT PRIMARY KEY,
          [Date]    DATETIME
       )
-
+	  
     /*************************************		SET Date Range values (Configurable window based on bluebin.Config = 'ReportDateStart')					***********************/
 
 	DECLARE @StartDateConfig int, @EndDateConfig varchar(20)
@@ -84,3 +89,5 @@ GO
 	  UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimDate'
+
+GO

@@ -47,7 +47,7 @@ FROM   bluebin.DimDate
               ON EXPIRE_DT = Date 
 		LEFT JOIN APVENMAST b ON a.VENDOR = b.VENDOR
 		LEFT JOIN ITEMMAST c ON a.ITEM = c.ITEM
-		select EFFECTIVE_DT,count(*) from POVAGRMTLN group by EFFECTIVE_DT
+		--select EFFECTIVE_DT,count(*) from POVAGRMTLN group by EFFECTIVE_DT
 GO
 
 UPDATE etl.JobSteps

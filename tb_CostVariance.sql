@@ -1,8 +1,12 @@
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_CostVariance') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_CostVariance
 GO
 
---exec tb_ItemLocator
+--exec tb_CostVariance
 
 CREATE PROCEDURE tb_CostVariance
 
@@ -19,7 +23,7 @@ SELECT f.ITEM,
        Max(e.PO_DATE)   AS EXP_DATE,
        Sum(c.QUANTITY)  AS QUANTITY,
        c.ENT_BUY_UOM    AS UOM,
-       (d.MATCH_UNIT_CST/c.EBUY_UOM_MULT) AS UNIT_COST,
+       (d.MATCH_UNIT_CST/case when c.EBUY_UOM_MULT < 1 then 1 else c.EBUY_UOM_MULT end) AS UNIT_COST,
        h.ISS_ACCOUNT
 INTO   #PriceHist
 FROM   POLINE c
@@ -46,7 +50,7 @@ WHERE  c.ITEM_TYPE IN ( 'I', 'N' )
 GROUP  BY f.ITEM,
           f.DESCRIPTION,
           c.ENT_BUY_UOM,
-		  c.EBUY_UOM_MULT,
+		  case when c.EBUY_UOM_MULT < 1 then 1 else c.EBUY_UOM_MULT end,
           d.MATCH_UNIT_CST,
           h.ISS_ACCOUNT
 
@@ -78,8 +82,8 @@ SELECT c.PO_NUMBER,
        e.PO_DATE,
        c.QUANTITY,
        c.ENT_BUY_UOM,
-       (c.ENT_UNIT_CST/c.EBUY_UOM_MULT)	as ENT_UNIT_CST,
-       (d.MATCH_UNIT_CST/c.EBUY_UOM_MULT) as MATCH_UNIT_CST
+       (c.ENT_UNIT_CST/case when c.EBUY_UOM_MULT < 1 then 1 else c.EBUY_UOM_MULT end)	as ENT_UNIT_CST,
+       (d.MATCH_UNIT_CST/case when c.EBUY_UOM_MULT < 1 then 1 else c.EBUY_UOM_MULT end) as MATCH_UNIT_CST
 INTO   #POHistory
 FROM   POLINE c
        INNER JOIN MAINVDTL d

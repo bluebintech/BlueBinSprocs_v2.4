@@ -32,7 +32,8 @@ LineNum,
 OrderQty
 from tableau.Kanban
 
-where [Date] > getdate() -90 and StockOut = 1  and ScanHistseq > (select ConfigValue from bluebin.Config where ConfigName = 'ScanThreshold') and OrderCloseDate is null
+where [Date] > getdate() -90 and 
+StockOut = 1  and ScanHistseq > (select ConfigValue from bluebin.Config where ConfigName = 'ScanThreshold') and OrderCloseDate is null
 
 UNION
 
@@ -45,7 +46,7 @@ dl.LocationName,
 scan.ItemID,
 di.ItemDescription,
 scan.Date as OrderDate,
-scan.ScanBatchID as OrderNum,
+convert(varchar(10),scan.ScanBatchID) as OrderNum,
 max(sl.Line) as LineNum,
 max(sl.Qty) as OrderQty
 from (

@@ -6,12 +6,11 @@ drop procedure sp_SelectQCN
 GO
 
 --select * from qcn.QCN
---exec sp_SelectQCN '%','%','%','0','%'
+--exec sp_SelectQCN '%','%','All Open','%'
 CREATE PROCEDURE sp_SelectQCN
 @FacilityName varchar(50)
 ,@LocationName varchar(50)
 ,@QCNStatusName varchar(255)
-,@Completed int
 ,@AssignedUserName varchar(50)
 
 --WITH ENCRYPTION
@@ -20,11 +19,18 @@ BEGIN
 SET NOCOUNT ON
 declare @QCNStatus int = 0
 declare @QCNStatus2 int = 0
-if @Completed = 0
+if @QCNStatusName = 'All Open'
 begin
 select @QCNStatus = QCNStatusID from qcn.QCNStatus where Status = 'Completed'
 select @QCNStatus2 = QCNStatusID from qcn.QCNStatus where Status = 'Rejected'
+set @QCNStatusName = '%'
 end
+
+if @QCNStatusName = 'All'
+begin
+set @QCNStatusName = '%'
+end
+
 
 select 
 	q.[QCNID],
@@ -76,6 +82,7 @@ and q.QCNStatusID not in (@QCNStatus,@QCNStatus2)
 and case	
 		when @AssignedUserName <> '%' then v.LastName + ', ' + v.FirstName else '' end LIKE  '%' + @AssignedUserName + '%' 
             order by q.[DateEntered] asc--,convert(int,(getdate() - q.[DateEntered])) desc
+
 
 END
 GO

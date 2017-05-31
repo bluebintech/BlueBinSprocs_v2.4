@@ -1,3 +1,7 @@
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_StatCalls') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_StatCalls
 GO

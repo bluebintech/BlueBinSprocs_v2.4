@@ -16,7 +16,8 @@ SET NOCOUNT ON
 select 
 	distinct 
 	q.[LocationID],
-    dl.LocationID + ' - ' + dl.[LocationName] as LocationName
+	rtrim(dl.[LocationName]) + ' - ' + dl.LocationID  as LocationName
+	--dl.LocationID + ' - ' + dl.[LocationName] as LocationName
 	from gemba.GembaAuditNode q
 	left join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and dl.BlueBinFlag = 1
 	order by LocationID

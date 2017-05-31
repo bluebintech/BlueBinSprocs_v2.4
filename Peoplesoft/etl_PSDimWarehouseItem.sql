@@ -25,8 +25,9 @@ END TRY
 BEGIN CATCH
 END CATCH
 
-declare @Facility int
+declare @Facility int, @UsePriceList int
    select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
+   select @UsePriceList = ConfigValue from bluebin.Config where ConfigName = 'PS_UsePriceList'
    
 
 SELECT 
@@ -47,7 +48,11 @@ SELECT
        a.[QTY_ONHAND]       AS SOHQty,
        a.[QTY_MAXIMUM]     AS ReorderQty,
        a.[REORDER_POINT] AS ReorderPoint,
-	   a.[LAST_PRICE_PAID]	AS UnitCost,
+	   a.[LAST_PRICE_PAID] as UnitCost,
+	   --CASE 		--Use if PriceList should be part of the Warehouse report as well  Uncomment left join to PURCHITEM_ATTR if activating
+		--WHEN @UsePriceList = 1 then p.PRICE_LIST
+		--else a.[LAST_PRICE_PAID]	
+		--End AS UnitCost,
        b.StockUOM,
        b.BuyUOM,
        b.PackageString
@@ -55,6 +60,7 @@ INTO   bluebin.DimWarehouseItem
 FROM   [dbo].[BU_ITEMS_INV] a
        INNER JOIN bluebin.DimItem b
                ON a.[INV_ITEM_ID] = b.ItemID
+		--LEFT JOIN [dbo].PURCH_ITEM_ATTR p on a.INV_ITEM_ID = p.INV_ITEM_ID
 		
        --INNER JOIN ICCATEGORY c
        --        ON a.COMPANY = c.COMPANY

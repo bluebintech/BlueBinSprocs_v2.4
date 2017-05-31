@@ -150,6 +150,9 @@ insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebi
 insert into bluebin.BlueBinRoleOperations select RoleID,(select OpID from bluebin.BlueBinOperations where OpName ='TimeStudy-GroupConfig') from bluebin.BlueBinRoles where RoleName like 'BlueBin%'
 END
 
+
+
+
 if not exists(select * from bluebin.Config where ConfigName = 'TimeStudy-GroupConfig')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
@@ -294,6 +297,14 @@ GO
 
 
 /* PEOPLESOFT CONFIGS*/
+
+if not exists(select * from bluebin.Config where ConfigName = 'PS_UsePriceList')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'PS_UsePriceList','0',1,getdate(),'DMS','For Bin Price, use Price list (1) or Last PO Price (0).  Default=0'
+END
+GO
+
 if not exists(select * from bluebin.Config where ConfigName = 'ClientERP')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
@@ -330,6 +341,13 @@ END
 GO
 
 /* END Peoplesoft COnfigs */
+
+if not exists(select * from bluebin.Config where ConfigName = 'ConsignmentFlag')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'ConsignmentFlag','CONSIGNMENT',1,getdate(),'DMS','Consignment Flag setting for User Field 1 to take instead of CONSIGNMENT_FL'
+END
+GO
 
 if not exists(select * from bluebin.Config where ConfigName = 'GembaIdentifier')  
 BEGIN
@@ -407,6 +425,8 @@ END
 if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-%')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
+('OP-Stat Calls Detail','0',1,getdate(),'Reports','Setting for whether to display the Stat Calls Detail'),
+('OP-Node Scorecard','0',1,getdate(),'Reports','Setting for whether to display the Node Scorecard'),
 ('OP-Gemba Auditor Details','0',1,getdate(),'Reports','Setting for whether to display the Gemba Auditor Details'),
 ('OP-Activity Times','0',1,getdate(),'Reports','Setting for whether to display the Time Study Activity Times'),
 ('OP-Activity Averages','0',1,getdate(),'Reports','Setting for whether to display the Time Study Averages for Nodes'),
@@ -430,6 +450,7 @@ END
 if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'Src-%')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
+('Src-Location Forecast','1',1,getdate(),'Reports','Setting for whether to display the Location Forecast Report'),
 ('Src-Buyer Performance','1',1,getdate(),'Reports','Setting for whether to display the Buyer Performance DB'),
 ('Src-Special Performance','1',1,getdate(),'Reports','Setting for whether to display the Specials DB'),
 ('Src-Supplier Performance','1',1,getdate(),'Reports','Setting for whether to display the Supplier Performance DB'),
@@ -2866,7 +2887,6 @@ GO
 grant exec on sp_SelectHardwareCustomer to appusers
 GO
 
-
 --*****************************************************
 --**************************SPROC**********************
 
@@ -2901,9 +2921,9 @@ select
 	df.FacilityName,
 	q.[LocationID],
     case
-		when q.[LocationID] = 'Multiple' then q.LocationID
+		when q.[LocationID] like 'Mult%' then q.LocationID
 		else case	when dl.LocationID = dl.LocationName then dl.LocationID
-					else dl.LocationID + ' - ' + dl.[LocationName] end end as LocationName,
+					else rtrim(dl.[LocationName]) + ' - ' +  dl.LocationID end end as LocationName,
 	RequesterUserID  as RequesterUserName,
 	ApprovedBy as ApprovedBy,
     case when v.UserLogin is null then '' else v.LastName + ', ' + v.FirstName end as AssignedUserName,
@@ -2930,7 +2950,7 @@ q.ManuNumName,
 from [qcn].[QCN] q
 --left join [bluebin].[DimBin] db on q.LocationID = db.LocationID and rtrim(q.ItemID) = rtrim(db.ItemID)
 left join [bluebin].[DimItem] di on rtrim(q.ItemID) = rtrim(di.ItemID)
-        left join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and dl.BlueBinFlag = 1
+        left join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and q.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
 		left join [bluebin].[DimFacility] df on q.FacilityID = df.FacilityID
 left join [bluebin].[BlueBinUser] v on q.AssignedUserID = v.BlueBinUserID
 inner join [qcn].[QCNType] qt on q.QCNTypeID = qt.QCNTypeID
@@ -2939,7 +2959,7 @@ left join qcn.QCNComplexity qc on q.QCNCID = qc.QCNCID
 
 WHERE q.Active = 1 
 and df.FacilityName like '%' + @FacilityName + '%'
-and (dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' or q.LocationID like '%' + @LocationName + '%')
+and (rtrim(dl.[LocationName]) + ' - ' +  dl.LocationID LIKE '%' + @LocationName + '%' or q.LocationID like '%' + @LocationName + '%')
 and qs.Status LIKE '%' + @QCNStatusName + '%'
 and q.QCNStatusID not in (@QCNStatus,@QCNStatus2)
 and case	
@@ -3612,7 +3632,7 @@ if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAud
 drop procedure sp_SelectGembaAuditNode
 GO
 
---exec sp_SelectGembaAuditNode '%','%','%'
+--exec sp_SelectGembaAuditNode '%','DW001','%'
 
 CREATE PROCEDURE sp_SelectGembaAuditNode
 @FacilityName varchar(50),
@@ -3629,7 +3649,8 @@ SET NOCOUNT ON
 	df.FacilityName,
 	case
 		when dl.LocationID = dl.LocationName then dl.LocationID
-		else dl.LocationID + ' - ' + dl.[LocationName] end as LocationName,
+		else rtrim(dl.[LocationName]) + ' - ' +  dl.LocationID end as LocationName,
+		--else dl.LocationID + ' - ' + dl.[LocationName] end as LocationName,
 	u.LastName + ', ' + u.FirstName as Auditer,
     u.UserLogin as AuditerLogin,
     q.PS_TotalScore as [Pull Score],
@@ -3642,11 +3663,11 @@ SET NOCOUNT ON
     q.LastUpdated
 from [gemba].[GembaAuditNode] q
 inner join bluebin.DimFacility df on q.FacilityID = df.FacilityID
-inner join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and dl.BlueBinFlag = 1
+inner join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and q.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
 inner join [bluebin].[BlueBinUser] u on q.AuditerUserID = u.BlueBinUserID
     Where q.Active = 1 
 	and df.[FacilityName] LIKE '%' + @FacilityName + '%' 
-	and dl.LocationID + ' - ' + dl.[LocationName] LIKE '%' + @LocationName + '%' 
+	and rtrim(dl.[LocationName]) + ' - ' +  dl.LocationID LIKE '%' + @LocationName + '%'
 	and u.LastName + ', ' + u.FirstName LIKE '%' + @Auditer + '%'
 	order by q.Date desc
 
@@ -3654,7 +3675,6 @@ END
 GO
 grant exec on sp_SelectGembaAuditNode to appusers
 GO
-
 
 
 
@@ -3709,7 +3729,7 @@ SELECT
 LocationFacility as FacilityID,
 rtrim(LocationID) as LocationID,
 --LocationName,
-case when LocationID = LocationName then LocationID else LocationID + ' - ' + [LocationName] end as LocationName 
+case when LocationID = LocationName then LocationID else rtrim([LocationName]) + ' - ' + LocationID end as LocationName 
 FROM [bluebin].[DimLocation] where BlueBinFlag = 1
 
 order by LocationID
@@ -3717,6 +3737,7 @@ END
 GO
 grant exec on sp_SelectLocation to appusers
 GO
+
 
 --*****************************************************
 --**************************SPROC**********************
@@ -3748,18 +3769,20 @@ SELECT
 LocationFacility as FacilityID,
 LocationID,
 --LocationName,
-case when LocationID = LocationName then LocationID else LocationID + ' - ' + [LocationName] end as LocationName 
+case when LocationID = LocationName then LocationID else rtrim([LocationName]) + ' - ' +  LocationID end as LocationName 
 
 FROM [bluebin].[DimLocation] where BlueBinFlag = 1
 UNION ALL 
 select distinct LocationFacility as FacilityID,'','--Select--' FROM [bluebin].[DimLocation] where BlueBinFlag = 1
 UNION ALL 
-select distinct LocationFacility as FacilityID,@MultipleID,@MultipleName FROM [bluebin].[DimLocation] where BlueBinFlag = 1) as a
+select distinct LocationFacility as FacilityID,@MultipleID,@MultipleName FROM [bluebin].[DimLocation] where BlueBinFlag = 1
+) as a
 order by LocationID
 END
 GO
 grant exec on sp_SelectLocationCascade to appusers
 GO
+
 
 --*****************************************************
 --**************************SPROC**********************
@@ -5042,11 +5065,8 @@ GO
 grant exec on sp_SelectQCNFacility to appusers
 GO
 
-
-
 --*****************************************************
 --**************************SPROC**********************
-
 
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectQCNLocation') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectQCNLocation
@@ -5066,7 +5086,7 @@ select
     case
 		when q.[LocationID] = 'Multiple' then q.LocationID
 		else case	when dl.LocationID = dl.LocationName then dl.LocationID
-					else dl.LocationID + ' - ' + dl.[LocationName] end end as LocationName
+					else rtrim(dl.[LocationName]) + ' - ' + dl.LocationID end end as LocationName
 	from qcn.QCN q
 	left join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and dl.BlueBinFlag = 1
 	order by LocationID
@@ -5074,6 +5094,7 @@ END
 GO
 grant exec on sp_SelectQCNLocation to appusers
 GO
+
 
 
 
@@ -7154,7 +7175,8 @@ SET NOCOUNT ON
 select 
 	distinct 
 	q.[LocationID],
-    dl.LocationID + ' - ' + dl.[LocationName] as LocationName
+	rtrim(dl.[LocationName]) + ' - ' + dl.LocationID  as LocationName
+	--dl.LocationID + ' - ' + dl.[LocationName] as LocationName
 	from gemba.GembaAuditNode q
 	left join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and dl.BlueBinFlag = 1
 	order by LocationID
@@ -7162,6 +7184,8 @@ END
 GO
 grant exec on sp_SelectGembaAuditNodeLocation to appusers
 GO
+
+
 
 --*****************************************************
 --**************************SPROC**********************
@@ -7188,6 +7212,40 @@ select
 END
 GO
 grant exec on sp_SelectGembaAuditNodeFacility to appusers
+GO
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditConesDetail') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_EditConesDetail
+GO
+
+--exec sp_EditConesDetail '12','Test','2016-08-05','No'
+
+CREATE PROCEDURE sp_EditConesDetail
+@ConesDeployedID int,
+@DetailsText varchar(255),
+@ExpectedDate Date,
+@SubProduct varchar(3)
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+	Update bluebin.[ConesDeployed]
+	set 
+	Details = @DetailsText, 
+	ExpectedDelivery = @ExpectedDate,
+	SubProduct = @SubProduct
+	where ConesDeployedID = @ConesDeployedID
+	
+END
+GO
+grant exec on sp_EditConesDetail to appusers
 GO
 
 
@@ -8236,7 +8294,6 @@ GO
 --*****************************************************
 --**************************SPROC**********************
 
-
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_CleanPeoplesoftTables') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_CleanPeoplesoftTables
 GO
@@ -8268,9 +8325,9 @@ BEGIN
 truncate table dbo.CART_ATTRIB_INV
 END
 
-if exists (select * from sys.tables where name = 'CART_CF_INF_INV')
+if exists (select * from sys.tables where name = 'CART_CT_INF_INV')
 BEGIN
-truncate table dbo.CART_CF_INF_INV
+truncate table dbo.CART_CT_INF_INV
 END
 
 if exists (select * from sys.tables where name = 'DEMAND_INF_INV')
@@ -8278,9 +8335,9 @@ BEGIN
 truncate table dbo.DEMAND_INF_INV
 END
 
-if exists (select * from sys.tables where name = 'CART_TEMP_INV')
+if exists (select * from sys.tables where name = 'CART_TEMPL_INV')
 BEGIN
-truncate table dbo.CART_TEMP_INV
+truncate table dbo.CART_TEMPL_INV
 END
 
 if exists (select * from sys.tables where name = 'IN_DEMAND')
@@ -8328,9 +8385,9 @@ BEGIN
 truncate table dbo.PO_LINE_DISTRIB
 END
 
-if exists (select * from sys.tables where name = 'PURCH_ITEM_ATTRIB')
+if exists (select * from sys.tables where name = 'PURCH_ITEM_ATTR')
 BEGIN
-truncate table dbo.PURCH_ITEM_ATTRIB
+truncate table dbo.PURCH_ITEM_ATTR
 END
 
 if exists (select * from sys.tables where name = 'PURCH_ITEM_BU')
@@ -8380,6 +8437,7 @@ END
 GO
 grant exec on sp_CleanPeoplesoftTables to public
 GO
+
 
 
 
@@ -8660,7 +8718,7 @@ Print 'Job Updates Complete'
 
 
 
-declare @version varchar(50) = '2.4.20161104' --Update Version Number here
+declare @version varchar(50) = '2.4.20170427' --Update Version Number here
 
 
 if not exists (select * from bluebin.Config where ConfigName = 'Version')
