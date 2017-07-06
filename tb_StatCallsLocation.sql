@@ -1,3 +1,7 @@
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_StatCallsLocation') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_StatCallsLocation
 GO
@@ -7,13 +11,16 @@ CREATE PROCEDURE tb_StatCallsLocation
 AS
 BEGIN
 SET NOCOUNT ON
-
+;
+WITH A as 
+	(
 
 SELECT
     a.FROM_TO_CMPY,
 	df.FacilityName,
 	--a.LOCATION,
-	b.REQ_LOCATION,
+	b.REQ_LOCATION as LocationID,
+	dl.LocationName,
 	dl.BlueBinFlag,
 	TRANS_DATE as Date,
     COUNT(*) as StatCalls,
@@ -31,11 +38,22 @@ GROUP BY
 	df.FacilityName,
 	--a.LOCATION,
 	b.REQ_LOCATION,
+	dl.LocationName,
 	dl.BlueBinFlag,
 	TRANS_DATE,
     c.ACCT_UNIT,
     c.DESCRIPTION
-Order by TRANS_DATE desc
+) 
+			
+select 
+distinct A.*,
+case when 
+i.REPL_FROM_LOC is not null then 'Yes' else 'No' end as WHSource
+from A
+left join ITEMSRC i on A.FROM_TO_CMPY = i.COMPANY and A.LocationID = i.LOCATION and REPLENISH_PRI = '1' and REPL_FROM_LOC in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+Order by A.Date desc
+
+
 
 END
 GO

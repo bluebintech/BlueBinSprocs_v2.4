@@ -22,7 +22,8 @@ lt.DESCR as LocationName,
 ISNULL(dl.BlueBinFlag,0) as BlueBinFlag,
 DEMAND_DATE       AS [Date],
 COUNT(*) as StatCalls,
-'' as Department
+'' as Department,
+'No' as WHSource
 
 FROM   dbo.IN_DEMAND
        INNER JOIN dbo.LOCATION_TBL lt on IN_DEMAND.LOCATION = lt.LOCATION

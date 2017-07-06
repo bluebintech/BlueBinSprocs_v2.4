@@ -139,6 +139,48 @@ truncate table dbo.VENDOR
 END
 
 
+if exists (select * from sys.tables where name = 'REQ_LN_SHIP')
+BEGIN
+truncate table dbo.REQ_LN_SHIP
+END
+
+if exists (select * from sys.tables where name = 'DEPT_TBL')
+BEGIN
+truncate table dbo.DEPT_TBL
+END
+
+if exists (select * from sys.tables where name = 'GL_ACCOUNT_TBL')
+BEGIN
+truncate table dbo.GL_ACCOUNT_TBL
+END
+
+if exists (select * from sys.tables where name = 'JRNL_HEADER')
+BEGIN
+truncate table dbo.JRNL_HEADER
+END
+
+if exists (select * from sys.tables where name = 'JRNL_LN')
+BEGIN
+truncate table dbo.JRNL_LN
+END
+
+if exists (select * from sys.tables where name = 'CM_ACCTG_LINE')
+BEGIN
+truncate table dbo.CM_ACCTG_LINE
+END
+
+if exists (select * from sys.tables where name = 'RECV_LN_ACCTG')
+BEGIN
+truncate table dbo.RECV_LN_ACCTG
+END
+
+if exists (select * from sys.tables where name = 'VCHR_ACCTG_LINE')
+BEGIN
+truncate table dbo.VCHR_ACCTG_LINE
+END
+
+
+
 
 END
 

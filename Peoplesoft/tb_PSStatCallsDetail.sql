@@ -27,8 +27,9 @@ DEMAND_DATE  AS [Date],
 ORDER_INT_LINE_NO as LINE_NBR,
 SUM((QTY_REQUESTED*-1)) as QUANTITY,
 --QTY_REQUESTED as QUANTITY,
-    '' as Department,
-case when ISNULL(dl.BlueBinFlag,0) = 1 then 'Yes' else 'No' end as BlueBinFlag
+    'N/A' as Department,
+case when ISNULL(dl.BlueBinFlag,0) = 1 then 'Yes' else 'No' end as BlueBinFlag,
+'No' as WHSource
 
 
 FROM   dbo.IN_DEMAND

@@ -425,6 +425,7 @@ END
 if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'OP-%')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
+('OP-Bin Sequence','0',1,getdate(),'Reports','Setting for whether to display the Bin Sequence Report'),
 ('OP-Stat Calls Detail','0',1,getdate(),'Reports','Setting for whether to display the Stat Calls Detail'),
 ('OP-Node Scorecard','0',1,getdate(),'Reports','Setting for whether to display the Node Scorecard'),
 ('OP-Gemba Auditor Details','0',1,getdate(),'Reports','Setting for whether to display the Gemba Auditor Details'),
@@ -5010,7 +5011,7 @@ if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectConesLoc
 drop procedure sp_SelectConesLocation
 GO
 
---exec sp_SelectQCNLocation
+--exec sp_SelectConesLocation
 CREATE PROCEDURE sp_SelectConesLocation
 
 --WITH ENCRYPTION
@@ -5021,19 +5022,23 @@ Select distinct a.LocationID,rTrim(a.ItemID) as ItemID,COALESCE(b.ItemClinicalDe
 from [bluebin].[DimBin] a 
                                 inner join [bluebin].[DimItem] b on rtrim(a.ItemID) = rtrim(b.ItemID)  
 								UNION 
-								select distinct LocationID,'' as ItemID,'' as ItemClinicalDescription, ''  as ExtendedDescription from [bluebin].[DimBin]
+								select distinct LocationID,'' as ItemID,'' as ItemClinicalDescription, '--Select--'  as ExtendedDescription from [bluebin].[DimBin]
                                        
-								UNION 
-								select distinct q.LocationID,rTrim(q.ItemID) as ItemID,COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description'),rTrim(q.ItemID)+ ' - ' + COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description') as ExtendedDescription  
-								from qcn.QCN q
-								inner join bluebin.DimItem di on q.ItemID = di.ItemID
-								inner join bluebin.DimLocation dl on q.LocationID = dl.LocationID
+								--UNION 
+								--select distinct q.LocationID,rTrim(q.ItemID) as ItemID,COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description'),rTrim(q.ItemID)+ ' - ' + COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description') as ExtendedDescription  
+								--from qcn.QCN q
+								--inner join bluebin.DimItem di on q.ItemID = di.ItemID
+								--inner join bluebin.DimLocation dl on q.LocationID = dl.LocationID
                                        order by 4 asc
 
 END
 GO
 grant exec on sp_SelectConesLocation to appusers
 GO
+
+
+
+
 
 
 
@@ -7887,6 +7892,44 @@ GO
 --*****************************************************--*****************************************************--*****************************************************--*****************************************************--*****************************************************
 Print 'Main Sproc Add/Updates Complete'
 
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'ssp_ERPSize') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure ssp_ERPSize
+GO
+
+--exec ssp_ERPSize 'OSUMC','RECV_LN_SHIP'
+--exec ssp_ERPSize '',''
+
+CREATE PROCEDURE ssp_ERPSize
+@DB varchar(20),
+@table varchar(20)
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+--Table Rowcount Query
+select 
+DB,
+[Schema],
+[Table],
+row_count,
+[Date]
+from BlueBinDMSAdmin.etl.ETLERPTables
+where DB like '%' + @DB + '%' and [Table] like '%' + @table + '%'
+order by DB,[Table],[Date] desc
+END
+GO
+grant exec on ssp_ERPSize to public
+GO
+
+
+
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -8291,6 +8334,7 @@ GO
 
 
 
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -8431,15 +8475,54 @@ truncate table dbo.VENDOR
 END
 
 
+if exists (select * from sys.tables where name = 'REQ_LN_SHIP')
+BEGIN
+truncate table dbo.REQ_LN_SHIP
+END
+
+if exists (select * from sys.tables where name = 'DEPT_TBL')
+BEGIN
+truncate table dbo.DEPT_TBL
+END
+
+if exists (select * from sys.tables where name = 'GL_ACCOUNT_TBL')
+BEGIN
+truncate table dbo.GL_ACCOUNT_TBL
+END
+
+if exists (select * from sys.tables where name = 'JRNL_HEADER')
+BEGIN
+truncate table dbo.JRNL_HEADER
+END
+
+if exists (select * from sys.tables where name = 'JRNL_LN')
+BEGIN
+truncate table dbo.JRNL_LN
+END
+
+if exists (select * from sys.tables where name = 'CM_ACCTG_LINE')
+BEGIN
+truncate table dbo.CM_ACCTG_LINE
+END
+
+if exists (select * from sys.tables where name = 'RECV_LN_ACCTG')
+BEGIN
+truncate table dbo.RECV_LN_ACCTG
+END
+
+if exists (select * from sys.tables where name = 'VCHR_ACCTG_LINE')
+BEGIN
+truncate table dbo.VCHR_ACCTG_LINE
+END
+
+
+
 
 END
 
 GO
 grant exec on sp_CleanPeoplesoftTables to public
 GO
-
-
-
 
 
 
@@ -8718,7 +8801,7 @@ Print 'Job Updates Complete'
 
 
 
-declare @version varchar(50) = '2.4.20170427' --Update Version Number here
+declare @version varchar(50) = '2.4.20170605' --Update Version Number here
 
 
 if not exists (select * from bluebin.Config where ConfigName = 'Version')

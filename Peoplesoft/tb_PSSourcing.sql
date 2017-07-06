@@ -92,7 +92,8 @@ SELECT Row_number()
 				'' as OnTime,							--NEED
 				'' as Late,								--NEED
 				dl.BlueBinFlag,							--NEED
-				(select FacilityName from bluebin.DimFacility where FacilityID = @Facility) as FacilityName
+				(select FacilityName from bluebin.DimFacility where FacilityID = @Facility) as FacilityName,
+				dl.LocationName
 
 
 

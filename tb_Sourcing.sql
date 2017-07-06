@@ -8,8 +8,8 @@ IF EXISTS ( SELECT  *
 DROP PROCEDURE  tb_Sourcing
 GO
 
-CREATE PROCEDURE	tb_Sourcing
---exec tb_Sourcing  select count(*) from tableau.Sourcing where PODate >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE')
+CREATE PROCEDURE tb_Sourcing 
+--exec tb_Sourcing  select * from tableau.Sourcing where PODate >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE')
 AS
 
 /********************************		DROP Sourcing		**********************************/
@@ -193,7 +193,8 @@ SELECT a.*,
          ELSE 0
        END AS Late,
 	   case when dl.BlueBinFlag = 1 then 'Yes' else 'No' end as BlueBinFlag,
-	   df.FacilityName
+	   df.FacilityName,
+	   dl.LocationName
 
 INTO   tableau.Sourcing 
 FROM   #tmpPOs a
