@@ -2361,8 +2361,7 @@ SELECT
 '' AS AcctUnitName,
 '' AS Location,
 '' AS LocationName,
-       1               AS LineCount,
-	   as NAME
+       1               AS LineCount
 
 
 
@@ -2687,11 +2686,8 @@ GO
 
 --exec tb_KanbansAdjusted  
 /*
-20171025 GB - updated to be 30 days instead of 7
-declare
-
-declare @ItemID varchar(32) = '35744'
-declare @Location varchar(5) = 'DN044'
+declare @ItemID varchar(32) = '07018'
+declare @Location varchar(5) = 'BK004'
 select * from bluebin.DimBinHistory where ItemID = @ItemID and LocationID = @Location
 select * from bluebin.DimBin where ItemID = @ItemID and LocationID = @Location
 select * from tableau.Kanban where ItemID = @ItemID and LocationID = @Location and [Date] > getdate() -7 and Scan = 1
@@ -2700,7 +2696,9 @@ select * from tableau.Kanban where ItemID = @ItemID and LocationID = @Location a
 CREATE PROCEDURE [dbo].[tb_KanbansAdjusted] 
 	
 AS
+
 BEGIN
+
 
 select 
 [Week]
@@ -2750,10 +2748,6 @@ case when a.OrderQty is not null and a.OrderQty <> a.BinQty and a.OrderUOM = a.B
 ,case when a.OrderQty is not null and a.OrderQty <> a.BinQty and a.OrderUOM = a.BinUOM and db.BinCurrentStatus <> 'Never Scanned' and a.OrderQty <> 0  then 1 else 0 end as BinOrderChange
 ,db.BinCurrentStatus
 
-
-
-
-
 from bluebin.DimBin db 
 inner join bluebin.DimFacility df on db.BinFacility = df.FacilityID
 inner join bluebin.DimLocation dl on db.LocationID = dl.LocationID
@@ -2762,9 +2756,9 @@ inner join bluebin.DimItem di on db.ItemID = di.ItemID
 left join(select distinct dbh.[Date],dbh.BinKey,dbh.FacilityID,dbh.LocationID,dbh.ItemID,dbh.BinQty,dbh.BinUOM,dbh.[Sequence],dbh.LastBinQty,dbh.LastBinUOM,dbh.[LastSequence] 
 			from bluebin.DimBinHistory dbh
 			inner join (select FacilityID,LocationID,ItemID,max(Date) as LastDate from bluebin.DimBinHistory group by FacilityID,LocationID,ItemID) mmax 
-							on dbh.FacilityID = mmax.FacilityID and dbh.LocationID = mmax.LocationID and dbh.ItemID = mmax.ItemID and dbh.[Date] = mmax.LastDate) dbh on db.BinFacility = dbh.FacilityID and db.LocationID = dbh.LocationID and db.ItemID = dbh.ItemID and dbh.[Date] >= getdate() -30
+							on dbh.FacilityID = mmax.FacilityID and dbh.LocationID = mmax.LocationID and dbh.ItemID = mmax.ItemID and dbh.[Date] = mmax.LastDate) dbh on db.BinFacility = dbh.FacilityID and db.LocationID = dbh.LocationID and db.ItemID = dbh.ItemID and dbh.[Date] >= getdate() -7
 
-left join (select FacilityID,LocationID,ItemID,[Date],OrderQty,OrderUOM,BinUOM,BinQty from tableau.Kanban where Scan = 1 and OrderQty <> BinQty and OrderQty <> 0 and Date >= getdate() -30) a on db.BinFacility= a.FacilityID and db.LocationID = a.LocationID and db.ItemID = a.ItemID-- and a.[Date] >= dbh.LastDate
+left join (select FacilityID,LocationID,ItemID,[Date],OrderQty,OrderUOM,BinUOM,BinQty from tableau.Kanban where Scan = 1 and OrderQty <> BinQty and OrderQty <> 0 and Date >= getdate() -7) a on db.BinFacility= a.FacilityID and db.LocationID = a.LocationID and db.ItemID = a.ItemID-- and a.[Date] >= dbh.LastDate
 
 
 --where dbh.[Date] >= getdate() -7 
@@ -2796,10 +2790,14 @@ order by FacilityID,LocationID,ItemID
 
 
 
+
+
 END
 GO
 grant exec on tb_KanbansAdjusted to public
 GO
+
+
 
 
 

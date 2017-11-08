@@ -29,16 +29,22 @@ SUM((QTY_REQUESTED*-1)) as QUANTITY,
 --QTY_REQUESTED as QUANTITY,
     'N/A' as Department,
 case when ISNULL(dl.BlueBinFlag,0) = 1 then 'Yes' else 'No' end as BlueBinFlag,
-'No' as WHSource
+case	when ISNULL(dl.BlueBinFlag,0) = 0 
+		then case	when INV_ITEM_ID is null or INV_ITEM_ID = '' 
+					then 'Not Managed Special' 
+					else 'Not Managed Standard' end
+		else 'Managed' end as Category,
+0 as Cost,	--Need
+case when ORDER_NO LIKE 'MSR%' then 'Yes' else 'No' end as WHSource
 
 
-FROM   dbo.IN_DEMAND
-       INNER JOIN dbo.LOCATION_TBL lt on IN_DEMAND.LOCATION = lt.LOCATION
+FROM   IN_DEMAND
+       INNER JOIN LOCATION_TBL lt on IN_DEMAND.LOCATION = lt.LOCATION
 	   LEFT JOIN bluebin.DimLocation dl ON lt.LOCATION = dl.LocationID
 
 WHERE  PICK_BATCH_ID = 0
        --AND BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
-	   AND (BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT') or SOURCE_BUS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT'))
+	   AND (BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNITSTAT') or SOURCE_BUS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT'))
 	   AND (IN_FULFILL_STATE in (select ConfigValue from bluebin.Config where ConfigName = 'PS_InFulfillState') or IN_FULFILL_STATE is null)
 	   and DEMAND_DATE > getdate() -90
 		--AND dl.BlueBinFlag = 1
@@ -57,5 +63,3 @@ END
 GO
 grant exec on tb_StatCallsDetail to public
 GO
-
-

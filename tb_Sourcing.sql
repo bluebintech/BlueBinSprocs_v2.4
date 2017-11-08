@@ -1,4 +1,9 @@
 
+/***************************************************************************
+
+			Sourcing
+
+***************************************************************************/
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -52,7 +57,8 @@ SELECT a.COMPANY,
        a.VEN_ITEM,
        a.CLOSED_FL,
        a.CXL_QTY,
-       c.INVOICE_AMT
+       c.INVOICE_AMT,
+	   dt.DELIVER_TO
 INTO   #tmpPOLines
 FROM   POLINE a
        INNER JOIN PURCHORDER b
@@ -74,6 +80,8 @@ FROM   POLINE a
                  AND a.LINE_NBR = d.LINE_NBR
                  AND a.PO_CODE = d.PO_CODE
 				 AND a.PO_RELEASE = d.PO_RELEASE
+		left join (select distinct pls.PO_NUMBER,rh.DELIVER_TO from REQHEADER rh INNER JOIN POLINESRC pls on rh.REQ_NUMBER = pls.SOURCE_DOC_N) dt
+			ON a.PO_NUMBER = dt.PO_NUMBER
 WHERE  b.PO_DATE >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE') 
 		--AND b.PO_RELEASE = 0
        AND a.CXL_QTY = 0
@@ -89,7 +97,8 @@ SELECT a.DOC_NUMBER    AS PO_NUMBER,
 INTO #tmpMMDIST
 FROM   MMDIST a
 inner join (select COMPANY,DOC_NUMBER,LINE_NBR,max(LINE_SEQ) as LINE_SEQ from MMDIST WHERE  SYSTEM_CD = 'PO' AND DOC_TYPE = 'PT' group by COMPANY,DOC_NUMBER,LINE_NBR) sq on a.COMPANY = sq.COMPANY and a.DOC_NUMBER = sq.DOC_NUMBER and a.LINE_NBR = sq.LINE_NBR and a.LINE_SEQ = sq.LINE_SEQ
-       LEFT JOIN GLNAMES b
+       LEFT JOIN 
+		(select COMPANY,ACCT_UNIT,DESCRIPTION,ACTIVE_STATUS from GLNAMES group by COMPANY,ACCT_UNIT,DESCRIPTION,ACTIVE_STATUS) b
               ON a.COMPANY = b.COMPANY
                  AND a.ACCT_UNIT = b.ACCT_UNIT
 WHERE  SYSTEM_CD = 'PO'
@@ -97,7 +106,7 @@ WHERE  SYSTEM_CD = 'PO'
        AND a.DOC_NUMBER IN (SELECT PO_NUMBER
                           FROM   PURCHORDER
                           WHERE  PO_DATE >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE'))
-						  --and a.DOC_NUMBER like '%593273%'
+						  --and a.DOC_NUMBER like '%643587%'
 						  --and a.DOC_NUMBER like '%389266%' order by 2
 
 
@@ -138,6 +147,7 @@ SELECT Row_number()
        CXL_QTY                           AS QtyCancelled,
        QUANTITY * ENT_UNIT_CST           AS POAmt,
        INVOICE_AMT                       AS InvoiceAmt,
+	   DELIVER_TO						 AS DeliverToNew,
        ITEM_TYPE                         AS POItemType,
        CASE
          WHEN ITEM_TYPE = 'S' THEN 0
@@ -162,12 +172,12 @@ FROM   #tmpPOLines a
 
 SELECT *,
 CASE WHEN ClosedFlag = 'Y' THEN 'Closed' ELSE
-	CASE WHEN QtyReceived + QtyCancelled = QtyOrdered THEN 'Closed' ELSE 'Open' END
+	CASE WHEN QtyReceived + QtyCancelled >= QtyOrdered THEN 'Closed' ELSE 'Open' END
 	END 																as POStatus,
 CASE WHEN POItemType = 'S' THEN 'N/A' ELSE
 	CASE WHEN Dateadd(day, 3, ExpectedDeliveryDate) <= GETDATE() AND (QtyReceived+QtyCancelled < QtyOrdered) THEN 'Late' ELSE
 		CASE WHEN Dateadd(day, 3, ExpectedDeliveryDate) > GETDATE() THEN 'In-Progress' ELSE
-			CASE WHEN ReceivedDate <= Dateadd(day, 3, ExpectedDeliveryDate) AND (QtyReceived + QtyCancelled) = QtyOrdered THEN 'On-Time' ELSE 'Late' END
+			CASE WHEN ReceivedDate <= Dateadd(day, 3, ExpectedDeliveryDate) AND (QtyReceived + QtyCancelled) >= QtyOrdered THEN 'On-Time' ELSE 'Late' END
 		END	
 	
 	END

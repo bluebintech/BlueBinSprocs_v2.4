@@ -104,7 +104,7 @@ Orders
                           AND PO_LN_DST.LOCATION = FirstScans.LocationID
          WHERE  (LEFT(PO_LN_DST.LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
 				or PO_LN_DST.LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
-                AND PO_LN.CANCEL_STATUS NOT IN ( 'X', 'D' )
+                AND ISNULL(PO_LN.CANCEL_STATUS,'') NOT IN ( 'X', 'D', 'PX' )
 				--AND PO_LN_DST.LOCATION = 'B039012050' --and PO_LN.INV_ITEM_ID = '1000234' 
 				--and DATEADD(hour,@POTimeAdjust,PO_HDR.PO_DT) > getdate() -5
                 --AND PO_LN_DST.BUSINESS_UNIT_GL = 209
@@ -141,7 +141,9 @@ SELECT a.BinKey,
        COALESCE(b.SCAN_DATE,a.PO_DT)                 AS OrderDate,
        a.CloseDate,
        a.OrderQty,
-       a.OrderUOM
+       a.OrderUOM,
+	   'PO' as OrderType,
+		'No' as Cancelled
 FROM   Orders a
        LEFT JOIN CartCounts b
                ON a.LocationID = b.LocationID
@@ -158,8 +160,12 @@ SELECT Bins.BinKey,
        Picks.ORDER_INT_LINE_NO as LineNum,
        Picks.SCHED_DTTM as OrderDate,
        Picks.PICK_CONFIRM_DTTM as CloseDate,
-       Cast(Picks.QTY_PICKED AS INT) AS OrderQty,
-UNIT_OF_MEASURE as OrderUOM
+       Cast(Picks.QTY_REQUESTED AS INT) AS OrderQty,
+	   UNIT_OF_MEASURE as OrderUOM,
+	   CASE
+         WHEN Picks.ORDER_NO LIKE 'MSR%' THEN 'MSR'
+         ELSE 'Pick' end as OrderType,
+		case when IN_FULFILL_STATE = '70' and QTY_PICKED = '0' or IN_FULFILL_STATE = '90' then 'Yes' else 'No' end as Cancelled
 
 FROM   dbo.IN_DEMAND Picks
        INNER JOIN bluebin.DimBin Bins
@@ -171,6 +177,7 @@ WHERE  (LEFT(LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM
 		or LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
        AND (CANCEL_DTTM IS NULL  or CANCEL_DTTM < '1900-01-02')
 	   AND DEMAND_DATE >= FirstScanDate --ISNULL(FirstScanDate,Bins.BinGoLiveDate)
+
 	   )
 	   
 	   ,
@@ -181,12 +188,15 @@ tmpOrders
          OVER(
            Partition BY BinKey
            ORDER BY OrderDate) AS OrderSeq,
-       *,
-       CASE
-         WHEN OrderNum LIKE 'MSR%' THEN 'MSR'
-         ELSE 'PO'
-       END                     AS OrderType
+		   *
+       --*,
+       --CASE
+       --  WHEN OrderNum LIKE 'MSR%' THEN 'MSR'
+       --  ELSE 'PO'
+       --END                     AS OrderType
+
 FROM   tmpLines
+where Cancelled = 'No'
 ),
 
 --**************************
@@ -230,7 +240,7 @@ SELECT a.Scanseq,
        --COALESCE(a.CartCountNum, 0) as CartCountNum --Old PS field,
        a.OrderNum,
        a.LineNum,
-	   case when a.OrderType = 'MSR' then 'I'
+	   case when a.OrderType = 'MSR' or a.OrderType = 'Pick' then 'I'
 			else 'N' end as ItemType,
 	   a.OrderUOM,
        Cast(a.OrderQty AS INT) AS OrderQty,
@@ -261,6 +271,7 @@ FROM   Scans a
               ON a.ItemID = d.ItemID
 	   
 WHERE  a.OrderDate >= db.BinGoLiveDate and a.OrderUOM <> '0' and a.OrderQty <> '0'--and a.OrderDate > getdate() -360--and d.ItemKey = '18710' and 
+--and a.OrderNum = '0000383593'
 Order by BinKey,ScanHistseq asc
 
 

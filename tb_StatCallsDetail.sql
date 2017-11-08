@@ -38,7 +38,13 @@ WITH A as
 			   --     + ':'
 			   --     + Substring(RIGHT('00000' + CONVERT(VARCHAR, a.ACTUAL_TIME), 4), 3, 2) AS DATETIME))) AS TRANS_DATE,
 			case when c.ACCT_UNIT is null then 'None' else LTRIM(RTRIM(c.ACCT_UNIT)) + ' - '+ c.DESCRIPTION  end as Department,
-			case when dl.BlueBinFlag = 1 then 'Yes' else 'No' end as BlueBinFlag
+			case when dl.BlueBinFlag = 1 then 'Yes' else 'No' end as BlueBinFlag,
+			case	when dl.BlueBinFlag = 0 
+					then case	when a.ITEM is null or a.ITEM = '' 
+								then 'Not Managed Special' 
+								else 'Not Managed Standard' end
+					else 'Managed' end as Category,
+			SUM((a.QUANTITY*(a.TRAN_UOM_MULT*a.UNIT_COST))*-1) as Cost
 		FROM
 		ICTRANS a 
 		INNER JOIN RQLOC b ON a.FROM_TO_CMPY = b.COMPANY AND a.FROM_TO_LOC = b.REQ_LOCATION

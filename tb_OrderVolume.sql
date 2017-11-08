@@ -28,7 +28,7 @@ inner join bluebin.DimLocation dl on rtrim(rq.COMPANY) = rtrim(dl.LocationFacili
 inner join bluebin.DimFacility df on rtrim(rq.COMPANY) = rtrim(df.FacilityID)
 inner join REQHEADER rh on rq.REQ_NUMBER = rh.REQ_NUMBER
 left join REQUESTER r on rh.REQUESTER = r.REQUESTER and rq.COMPANY = r.COMPANY
-where rq.CREATION_DATE > getdate()-15 and rq.REQ_NUMBER='776569'
+where rq.CREATION_DATE > getdate()-15 
 
 
 

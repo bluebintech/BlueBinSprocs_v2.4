@@ -1,3 +1,9 @@
+/***************************************************************************
+
+			Kanban
+
+***************************************************************************/
+
 IF EXISTS ( SELECT  *
             FROM    sys.objects
             WHERE   object_id = OBJECT_ID(N'tb_Kanban')
@@ -16,6 +22,11 @@ END TRY
 
 BEGIN CATCH
 END CATCH
+Declare @UseClinicalDescTab int
+/*This setting will use the Brand Name (Peoplsoft) or the set name in ITEM LOC User Fields (Lawson) 
+instead of the standard that is populated through ItemClinicalDescription all write it over ItemDescription in ALL Tableau reports*/
+select @UseClinicalDescTab = ConfigValue from bluebin.Config where ConfigName = 'UseClinicalDescTab'
+
 
 
 SELECT distinct DimBin.BinKey,
@@ -56,7 +67,8 @@ SELECT distinct DimBin.BinKey,
 	   FactBinSnapshot.TimeToFill,
 	   FactBinSnapshot.BinVelocity,
        DimBinStatus.BinStatus,
-       DimItem.ItemDescription,
+       case
+		when @UseClinicalDescTab = 1 then DimItem.ItemClinicalDescription else DimItem.ItemDescription end as ItemDescription,
 	   DimItem.ItemClinicalDescription,
        DimItem.ItemManufacturer,
        DimItem.ItemManufacturerNumber,
@@ -93,3 +105,4 @@ WHERE StepName = 'Kanban'
 GO
 grant exec on tb_Kanban to public
 GO
+

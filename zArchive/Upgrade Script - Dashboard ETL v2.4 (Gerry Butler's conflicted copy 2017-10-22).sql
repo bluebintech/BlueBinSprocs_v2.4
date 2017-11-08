@@ -1,20 +1,20 @@
 /*
---*************************
-PEOPLESOFT SPECIFIC UPGRADE SCRIPTS
---*************************
-
 Upgrade Script to copy in the etl_ and tb_ sprocs used in both the daily etl and to populate data sources in the Tableau WOrkbooks
-20160927 - Updated by Gerry Butler
+20151211 - Created By John Ratte
+20160115 - Updated by Gery Butler
+20160211 - Updated by Gery Butler
+20160229 - Updated by Gery Butler
+20160315 - Updated by Gery Butler
+20160315 - Updated by Gery Butler
+20160509 - Updated by Gery Butler
 
 */
-
-
 
 
 SET ANSI_NULLS ON
 GO
 
-SET QUOTED_IDENTIFIER ON
+		SET QUOTED_IDENTIFIER ON
 GO
 
 SET ANSI_PADDING ON
@@ -22,6 +22,10 @@ GO
 
 SET NOCOUNT ON
 GO
+
+
+
+
 
 /*********************************************************************
 --tableau schema
@@ -71,7 +75,7 @@ END
 
 
 
-
+GO
 
 /*********************************************************************
 --etl tables
@@ -90,7 +94,7 @@ CREATE TABLE [etl].[JobHeader](
 ) ON [PRIMARY]
 END
 
-GO
+
 
 /****** Object:  Table [etl].[JobDetails]    Script Date: 12/11/2015 2:43:36 PM ******/
 if not exists (select * from sys.tables where name = 'JobDetails')
@@ -129,7 +133,6 @@ CREATE TABLE [etl].[JobSteps](
 ) ON [PRIMARY]
 ;  
 insert into etl.JobSteps (StepNumber,StepName,StepProcedure,StepTable,ActiveFlag,LastModifiedDate) VALUES
-
 ('1','DimItem','etl_DimItem','bluebin.DimItem',0,getdate()),
 ('2','DimLocation','etl_DimLocation','bluebin.DimLocation',0,getdate()),
 ('3','DimDate','etl_DimDate','bluebin.DimDate',0,getdate()),
@@ -147,7 +150,8 @@ insert into etl.JobSteps (StepNumber,StepName,StepProcedure,StepTable,ActiveFlag
 ('15','DimFacility','etl_DimFacility','bluebin.DimFacility',0,getdate()),
 ('16','BlueBinParMaster','etl_BlueBinParMaster','bluebin.BlueBinParMaster',0,getdate()),
 ('17','DimBinHistory','etl_DimBinHistory','bluebin.DimBinHistory',0,getdate()),
-('18','FactWHHistory','etl_FactWHHistory','bluebin.FactWHHistory',0,getdate())
+('18','FactWHHistory','etl_FactWHHistory','bluebin.FactWHHistory',0,getdate()),
+('19','FactActivityTimes','etl_FactActivityTimes','bluebin.FactActivityTimes',0,getdate())
 END
 GO
 
@@ -231,192 +235,571 @@ GO
 --etl sprocs
 *********************************************************************/
 
+/*********************************************************************
 
-/***********************************************************
+FactFactActivityTimes
 
-			Sourcing
+--update etl.JobSteps set ActiveFlag = 1 where StepName = 'FactActivityTimes'
 
-***********************************************************/
+*********************************************************************/
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
-            WHERE   object_id = OBJECT_ID(N'tb_Sourcing')
+            WHERE   object_id = OBJECT_ID(N'etl_FactActivityTimes')
                     AND type IN ( N'P', N'PC' ) ) 
 
-DROP PROCEDURE  tb_Sourcing
+DROP PROCEDURE  etl_FactActivityTimes
 GO
+--exec etl_FactActivityTimes
+--select * from bluebin.FactActivityTimes
 
-CREATE PROCEDURE	tb_Sourcing
---exec tb_Sourcing  select * from tableau.Sourcing
+CREATE PROCEDURE etl_FactActivityTimes
+
 AS
 
-/********************************		DROP Sourcing		**********************************/
+/****************************		DROP FactActivityTimes ***********************************/
+ BEGIN TRY
+ DROP TABLE bluebin.FactActivityTimes
+ END TRY
+ BEGIN CATCH
+ END CATCH
 
-BEGIN TRY
-    DROP TABLE tableau.Sourcing
-END TRY
+ /*******************************	CREATE FactActivityTimes	*********************************/
+ SET NOCOUNT ON
 
-BEGIN CATCH
-END CATCH
+/* CTE Table */
+Declare @FactActivityTimes TABLE ( Activity varchar(100),FacilityID int, FacilityName varchar(50),AvgS DECIMAL(10,2), AvgM DECIMAL(10,2), AvgH DECIMAL(10,2), LastUpdated date)
+
+/* Bin Fill */
+INSERT INTO @FactActivityTimes
+select 
+'Bin Fill' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem from bluebin.TimeStudyBinFill where MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem from bluebin.TimeStudyBinFill where MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+		
+/* Node Service */
+INSERT INTO @FactActivityTimes
+select 
+'NodeService' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID = (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue = 'Node service time') 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID = (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue = 'Node service time')
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+/* Travel Times All */
+INSERT INTO @FactActivityTimes
+select 
+'TravelTimeAll' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage','Travel time to next node','Leave Stage to enter node')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage','Travel time to next node','Leave Stage to enter node'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+/* Travel Times To Stage */
+INSERT INTO @FactActivityTimes
+select 
+'TravelTimeToStage' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel Back to Stage'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+
+/* Travel Times Next Node */
+INSERT INTO @FactActivityTimes
+select 
+'TravelTimeNextNode' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel time to next node')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Travel time to next node'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+/* Travel Times From Stage */
+INSERT INTO @FactActivityTimes
+select 
+'TravelTimeFromStage' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Leave Stage to enter node')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Leave Stage to enter node'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
 
 
 
-/**********************************		CREATE Temp Tables		***************************/
-/*
-select distinct BUSINESS_UNIT from PO_HDR
-select top 100* from PO_HDR
-select top 100* from PO_LINE
-select top 1000* from PO_LINE_DISTRIB
-select top 100* from RECV_LN_SHIP --where INV_ITEM_ID = '206460'
-select top 100* from MASTER_ITEM_TBL
-select top 100* from BRAND_NAMES_INV
-select top 100* from PURCH_ITEM_ATTR
-select top 100* from PURCH_ITEM_BU
-select top 1000* from MANUFACTURER order by 3
-select * from insert select * into Stanford_LPCH.tableau.Sourcing from OSUMC.tableau.Sourcing
-select top 1000* from OSUMC.tableau.Sourcing
-select * from tableau.Sourcing where PONumber = '0000404739'
-select * from etl.JobSteps
-update etl.JobSteps set ActiveFlag = 1 where StepName in ('Sourcing')
 
-*/
--- #tmpPOLines
-declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
-declare @POTimeAdjust int = (Select max(ConfigValue) from bluebin.Config where ConfigName = 'PS_POTimeAdjust')
-  
-;
-With A as (
-SELECT Row_number()
-                  OVER(
-                    ORDER BY PO_LN.PO_ID, PO_LN.LINE_NBR) AS POKey,
-                @Facility as Company,
-				PO_LN.PO_ID as PONumber,
-				--PO_LN.PO_ID as PONumber,
-				PO_LN.LINE_NBR AS POLineNumber,
-				0 as PORelease,							--NEED
-				PO_LN.PO_ID AS POCode,
-                PO_LN.INV_ITEM_ID  AS ItemNumber,
-                PO_HDR.VENDOR_ID as VendorCode,
-				ISNULL(v.VENDOR_NAME_SHORT,'N/A') as VendorName,					
-				PO_HDR.BUYER_ID as Buyer,
-				PO_HDR.BUYER_ID as BuyerName,			
-				PO_LN_DST.BUSINESS_UNIT as ShipLocation,					
-				PO_LN_DST.ACCOUNT as AcctUnit,			
-				gl.DESCR as AcctUnitName,						
-				PO_LN.DESCR254_MIXED as PODescr, -- Original   MIT.DESCR as PODescr,
-				case when PO_LN_DST.QTY_PO = '' then 0 else PO_LN_DST.QTY_PO end as QtyOrdered,
-				case
-					when ISNULL(PO_LN.CANCEL_STATUS,'') IN ( 'X', 'D', 'PX') OR SHIP.RECEIPT_DTTM is NULL then 0 else PO_LN_DST.QTY_PO end as QtyReceived, --May need to add , 'C', 'PX'		
-				PO_LN.CNTRCT_ID as AgrmtRef,
-				case when PO_LN_DST.QTY_PO = 0 then 0 else PO_LN_DST.MERCHANDISE_AMT/PO_LN_DST.QTY_PO end as UnitCost,							
-				PO_LN.UNIT_OF_MEASURE as BuyUOM,
-				1 as BuyUOMMult,						--NEED
-				case when PO_LN_DST.QTY_PO = 0 then 0 else PO_LN_DST.MERCHANDISE_AMT/PO_LN_DST.QTY_PO end as IndividualCost,					
-				DATEADD(hour,@POTimeAdjust,PO_HDR.PO_DT) as PODate,
-				--PO_HDR.PO_DT as PODate,
-				(DATEADD(day,((@POTimeAdjust/24)+convert(int,(Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime') )),PO_HDR.PO_DT)) as ExpectedDeliveryDate,				
-				'' as LateDeliveryDate,					
-				SHIP.RECEIPT_DTTM as ReceivedDate,
-				SHIP.RECEIPT_DTTM as CloseDate,			
-				PO_LN_DST.LOCATION AS PurchaseLocation,
-                @Facility as PurchaseFacility,
-				case when ISNULL(PO_LN_DST.DISTRIB_LN_STATUS,'') in ('M','X','C') or ISNULL(PO_LN.CANCEL_STATUS,'') IN ( 'X', 'C') then 'Y' else 'N' end  as ClosedFlag,						
-				case
-					when ISNULL(PO_LN.CANCEL_STATUS,'') IN ( 'X', 'D' , 'PX') or ISNULL(PO_LN_DST.DISTRIB_LN_STATUS,'') in ('M','X') then PO_LN_DST.QTY_PO else 0 end as QtyCancelled,	--May need to add , 'C', 'PX'					
-				PO_LN_DST.MERCHANDISE_AMT as POAmt,							
-				PO_LN_DST.MERCHANDISE_AMT as InvoiceAmt,
-				PO_LN_DST.LOCATION as DeliverToNew,						
-				Case 
-					When PO_LN.QTY_TYPE = 'S' and PO_LN.PRICE_DT_TYPE = 'D' then 'X'
-					When PO_LN.QTY_TYPE = 'L' and PO_LN.PRICE_DT_TYPE = 'P' then 'N'  
-					else 'I' end as POItemType,						
-				0 as PPV,								
-				1 as POLine		
-  
-         FROM   dbo.PO_LINE_DISTRIB PO_LN_DST
-                INNER JOIN dbo.PO_LINE PO_LN
-                        ON PO_LN_DST.PO_ID = PO_LN.PO_ID
-                           AND PO_LN_DST.LINE_NBR = PO_LN.LINE_NBR
-                INNER JOIN dbo.PO_HDR
-                        ON PO_LN.PO_ID = PO_HDR.PO_ID
-                LEFT JOIN
-					(select PO_ID,LINE_NBR,max(RECEIPT_DTTM) as RECEIPT_DTTM from dbo.RECV_LN_SHIP group by PO_ID,LINE_NBR) SHIP
-						ON PO_LN.PO_ID = SHIP.PO_ID
-                          AND PO_LN.LINE_NBR = SHIP.LINE_NBR
-				--LEFT JOIN MASTER_ITEM_TBL MIT on PO_LN.INV_ITEM_ID = MIT.INV_ITEM_ID
-				LEFT JOIN 
-					(select g.ACCOUNT,g.ACCOUNT_TYPE,g.DESCR from GL_ACCOUNT_TBL g
-					inner join (select ACCOUNT,max(EFFDT) as EFFDT from GL_ACCOUNT_TBL where EFF_STATUS = 'A' group by ACCOUNT) a on g.ACCOUNT = a.ACCOUNT and g.EFFDT = a.EFFDT
-					) gl ON PO_LN_DST.ACCOUNT = gl.ACCOUNT 
-				LEFT JOIN VENDOR v on PO_HDR.VENDOR_ID = v.VENDOR_ID
-				LEFT JOIN bluebin.DimLocation dl on PO_LN_DST.LOCATION = dl.LocationID
-				--LEFT JOIN (select INV_ITEM_ID,max(LAST_PO_PRICE_PAID) as Price from PURCH_ITEM_ATTR group by INV_ITEM_ID) pia on PO_LN.INV_ITEM_ID = pia.INV_ITEM_ID
-				
-				--select * from GL_ACCOUNT_TBL where ACCOUNT = '732900'
-				
+declare @StoreroomPL DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Storeroom Pick Lines')  --default is seconds in Config
+declare @ScanningBin DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Scanning Bin')  --default is seconds in Config
+declare @ScanningTime DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Scanning Time')--default is minutes in Config
+declare @ScanningNew DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Scan New Node')--default is minutes in Config
+declare @ScanningMove DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Scanning Move')--default is minutes in Config
+declare @ReturnsBinLg DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Returns Bins Large')--default is minutes in Config
+declare @ReturnsBinSm DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Returns Bins Small') --default is minutes in Config
+declare @ReturnsBinTH DECIMAL(10,2) = (select max(ConfigValue) from bluebin.Config where ConfigName = 'Returns Bins Threshhold')--default is Bin #s
 
-		 WHERE  PO_HDR.PO_DT >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE') 
-                AND (ISNULL(PO_LN.CANCEL_STATUS,'') NOT IN ( 'X', 'D' ) or ISNULL(PO_LN_DST.DISTRIB_LN_STATUS,'') NOT in ('M','X'))
+--select @ScanningTime 
+--select @ScanningNew 
+--select @ScanningMove 
+--select @ReturnsBinLg 
+--select @ReturnsBinSm 
+--select @ReturnsBinTH
 
-)
-,
-B as (
-SELECT A.*,
-CASE WHEN ClosedFlag = 'Y' THEN 'Closed' ELSE
-	CASE WHEN QtyReceived + QtyCancelled >= QtyOrdered THEN 'Closed' ELSE 'Open' END
-	END 																as POStatus,
-CASE WHEN POItemType = 'S' THEN 'N/A' ELSE
-	CASE WHEN Dateadd(day, 3, ExpectedDeliveryDate) <= GETDATE() AND (QtyReceived+QtyCancelled < QtyOrdered) THEN 'Late' ELSE
-		CASE WHEN Dateadd(day, 3, ExpectedDeliveryDate) > GETDATE() THEN 'In-Progress' ELSE
-			CASE WHEN ReceivedDate <= Dateadd(day, 3, ExpectedDeliveryDate) AND (QtyReceived + QtyCancelled) >= QtyOrdered THEN 'On-Time' ELSE 'Late' END
-		END	
-	
-	END
+/* Storeroom Pick Lines */
+INSERT INTO @FactActivityTimes
+select 
+'Storeroom Pick Lines' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@StoreroomPL) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@StoreroomPL)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@StoreroomPL)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
 
-END as PODeliveryStatus
+/* Scanning Bin */
+INSERT INTO @FactActivityTimes
+select 
+'Scanning Bin' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ScanningBin) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ScanningBin)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ScanningBin)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
 
-FROM A)
+/* Scanning Time */
+INSERT INTO @FactActivityTimes
+select 
+'Scanning Time' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ScanningTime)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ScanningTime) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ScanningTime)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
 
-SELECT B.*,
-       CASE
-         WHEN B.PODeliveryStatus = 'In-Progress' THEN 1
-         ELSE 0
-       END AS InProgress,
-       CASE
-         WHEN B.PODeliveryStatus = 'On-Time' THEN 1
-         ELSE 0
-       END AS OnTime,
-       CASE
-         WHEN B.PODeliveryStatus = 'Late' THEN 1
-         ELSE 0
-       END AS Late,
-	   case when dl.BlueBinFlag = 1 then 'Yes' else 'No' end as BlueBinFlag,
-	   df.FacilityName,
-	   dl.LocationName,
-	   iv.ITM_ID_VNDR as VendorItemNbr
+/* Scanning Time for a New Node */
+INSERT INTO @FactActivityTimes
+select 
+'Scanning New' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ScanningNew)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ScanningNew) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ScanningNew)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
 
-INTO   tableau.Sourcing 
-FROM   B
-LEFT JOIN bluebin.DimLocation dl on ltrim(rtrim(B.PurchaseLocation)) = ltrim(rtrim(dl.LocationID)) and ltrim(rtrim(B.PurchaseFacility)) = ltrim(rtrim(dl.LocationFacility))
-LEFT JOIN bluebin.DimFacility df on ltrim(rtrim(B.PurchaseFacility)) = ltrim(rtrim(df.FacilityID))
-LEFT JOIN (select VENDOR_ID,ITM_ID_VNDR,INV_ITEM_ID from ITM_VENDOR where ITM_STATUS = 'A') iv on B.ItemNumber = iv.INV_ITEM_ID and B.VendorCode = iv.VENDOR_ID
-where QtyOrdered > 0
---where ItemNumber= '0761925'
---where dl.BlueBinFlag = 1
+/* Scanning Move Computer between Nodes */
+INSERT INTO @FactActivityTimes
+select 
+'Scanning Move' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ScanningMove)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ScanningMove) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ScanningMove)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
 
-GO
+/* Returns Bins Large */
+INSERT INTO @FactActivityTimes
+select 
+'Returns Bins Large DEFAULT' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ReturnsBinLg)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ReturnsBinLg) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ReturnsBinLg)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+/* Returns Bins Small */
+
+INSERT INTO @FactActivityTimes
+select 
+'Returns Bins Small DEFAULT' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ReturnsBinSm)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ReturnsBinSm) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ReturnsBinSm)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+/* Returns Bins Threshhold */
+INSERT INTO @FactActivityTimes
+select 
+'Returns Bins Threshhold' as Activity,
+df.FacilityID,
+df.FacilityName,
+CAST(AVG(@ReturnsBinTH)*60 AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(@ReturnsBinTH) AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(@ReturnsBinTH)/60 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from bluebin.DimFacility df
+inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
+group by 
+df.FacilityID,
+df.FacilityName
+
+
+/* Returns Bins Small */
+INSERT INTO @FactActivityTimes
+select 
+'Returns Bins Small' as Activity,
+df.FacilityID,
+df.FacilityName,
+case when CAST(AVG(AllSecItem) AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinSm)*60 AS DECIMAL(10,2)) else CAST(AVG(AllSecItem) AS DECIMAL(10,2)) end as AvgS,
+case when CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinSm) AS DECIMAL(10,2)) else CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) end as AvgM,
+case when CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinSm)/60 AS DECIMAL(10,2)) else CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) end as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time')) 
+			and MostRecent = 1
+			and SKUS <= @ReturnsBinTH) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time'))
+			and MostRecent = 0
+			and SKUS <=@ReturnsBinTH) as b
+			group by FacilityID
+		) as c 
+		right join bluebin.DimFacility df on c.FacilityID = df.FacilityID
+		inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1 
+		group by df.FacilityID,df.FacilityName
+		 
+/* Returns Bins Large */
+
+INSERT INTO @FactActivityTimes
+select 
+'Returns Bins Large' as Activity,
+df.FacilityID,
+df.FacilityName,
+case when CAST(AVG(AllSecItem) AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinLg)*60 AS DECIMAL(10,2)) else CAST(AVG(AllSecItem) AS DECIMAL(10,2)) end as AvgS,
+case when CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinLg) AS DECIMAL(10,2)) else CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) end as AvgM,
+case when CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) = 0 or CAST(AVG(AllSecItem) AS DECIMAL(10,2)) is null then CAST(AVG(@ReturnsBinLg)/60 AS DECIMAL(10,2)) else CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) end as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time')) 
+			and MostRecent = 1
+			and SKUS > @ReturnsBinTH) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime) as SecItem 
+			from bluebin.TimeStudyNodeService 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Node Service' and ConfigValue in ('Returns bin time'))
+			and MostRecent = 0
+			and SKUS > @ReturnsBinTH) as b
+			group by FacilityID
+		) as c 
+		right join bluebin.DimFacility df on c.FacilityID = df.FacilityID
+		inner join bluebin.DimLocation dl on df.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1 
+		group by df.FacilityID,df.FacilityName
+
+
+
+/* Double Bin StockOut Sweep*/
+
+INSERT INTO @FactActivityTimes
+select 
+'Double Bin StockOut Sweep' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Write down Item numbers and sweep Stage')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Write down Item numbers and sweep Stage'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+/* Double Bin StockOut Key out */
+
+INSERT INTO @FactActivityTimes
+select 
+'Double Bin StockOut Key out' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Key out MSR')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Key out MSR'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+
+/* Double Bin StockOut Pick Items */
+
+INSERT INTO @FactActivityTimes
+select 
+'Double Bin StockOut Pick Items' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Pick Items')) 
+			and MostRecent = 1) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Pick Items'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+
+
+/* Double Bin StockOut Deliver Items */
+
+INSERT INTO @FactActivityTimes
+select 
+'Double Bin StockOut Deliver Items' as Activity,
+c.FacilityID,
+df.FacilityName,
+CAST(AVG(AllSecItem) AS DECIMAL(10,2)) as AvgS,
+CAST(AVG(AllSecItem)/60 AS DECIMAL(10,2)) as AvgM,
+CAST(AVG(AllSecItem)/360 AS DECIMAL(10,2)) as AvgH,
+convert(Date,getdate()) as LastUpdated
+from (
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) as AllSecItem from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Deliver Items')) 
+			and MostRecent = 1
+			) as a
+			group by FacilityID
+		UNION 
+		select FacilityID,CAST(AVG(SecItem) AS DECIMAL(10,2)) from (
+			select FacilityID,DATEDIFF(s,StartTime,StopTime)/SKUS as SecItem 
+			from bluebin.TimeStudyStockOut 
+			where  TimeStudyProcessID in (Select ConfigID from bluebin.Config where ConfigName = 'Double Bin StockOut' 
+			and ConfigValue in ('Deliver Items'))
+			and MostRecent = 0) as b
+			group by FacilityID
+		) as c 
+		inner join bluebin.DimFacility df on c.FacilityID = df.FacilityID 
+		group by c.FacilityID,df.FacilityName
+/* Double Bin StockOut All */
+
+INSERT INTO @FactActivityTimes
+select 
+'Double Bin StockOut All' as Activity,
+FacilityID,
+FacilityName,
+SUM(AvgS) as AvgS,
+SUM(AvgM) as AvgS,
+SUM(AvgH) as AvgS,
+convert(Date,getdate()) as LastUpdated
+from @FactActivityTimes
+where Activity like 'Double Bin%'
+group by
+FacilityID,
+FacilityName
+
+select * 
+into bluebin.FactActivityTimes
+from @FactActivityTimes
 
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
-WHERE StepName = 'Sourcing'
+WHERE StepName = 'FactActivityTimes'
 
 GO
-grant exec on tb_Sourcing to public
-GO
-
-
-
 
 
 
@@ -434,7 +817,7 @@ IF EXISTS ( SELECT  *
 DROP PROCEDURE  etl_DimItem
 GO
 
---exec etl_DimItem
+
 CREATE PROCEDURE etl_DimItem
 
 AS
@@ -454,54 +837,203 @@ BEGIN Catch
 END Catch
 
 
+/**************		CREATE Temp Tables			*******************/
+Declare @UseClinicalDescription int
+select @UseClinicalDescription = ConfigValue from bluebin.Config where ConfigName = 'UseClinicalDescription'       
+
+SELECT ITEM,max(ClinicalDescription) as ClinicalDescription
+INTO   #ClinicalDescriptions
+FROM
+(
+SELECT 
+	a.ITEM,
+		case when @UseClinicalDescription = 1 then
+		case 
+			when b.ClinicalDescription is null or b.ClinicalDescription = ''  then
+			case
+				when a.USER_FIELD3 is null or a.USER_FIELD3 = ''  then
+				case	
+					when a.USER_FIELD1 is null or a.USER_FIELD1 = '' then 
+					case 
+						when c.DESCRIPTION is null or c.DESCRIPTION = '' then '*NEEDS*'
+					else rtrim(c.DESCRIPTION) + '*' end
+				else a.USER_FIELD1 end
+			else a.USER_FIELD3 end
+		else b.ClinicalDescription end	
+	else c.DESCRIPTION
+	end as ClinicalDescription
+
+FROM 
+(SELECT 
+	ITEM,
+	USER_FIELD1,
+	USER_FIELD3
+FROM ITEMLOC a 
+INNER JOIN RQLOC b ON a.LOCATION = b.REQ_LOCATION and a.COMPANY = b.COMPANY
+WHERE LEFT(REQ_LOCATION, 2) IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) or REQ_LOCATION in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION)) a
+LEFT JOIN 
+(SELECT 
+	distinct ITEM, 
+	USER_FIELD3 as ClinicalDescription
+FROM ITEMLOC 
+WHERE LOCATION IN (SELECT [ConfigValue] FROM [bluebin].[Config] WHERE  [ConfigName] = 'LOCATION' AND Active = 1) AND LEN(LTRIM(USER_FIELD3)) > 0
+) b
+ON ltrim(rtrim(a.ITEM)) = ltrim(rtrim(b.ITEM))
+left join ITEMMAST c on ltrim(rtrim(a.ITEM)) = ltrim(rtrim(c.ITEM))
+) a
+
+Group by ITEM
+	  
+
+SELECT distinct ITEM,
+       Max(PO_DATE) AS LAST_PO_DATE
+INTO   #LastPO
+FROM   POLINE a
+       INNER JOIN PURCHORDER b
+              ON a.PO_NUMBER = b.PO_NUMBER
+                  AND a.COMPANY = b.COMPANY
+                  AND a.PO_CODE = b.PO_CODE
+--WHERE ITEM like '%30003%'			   
+GROUP  BY ITEM
+
+SELECT 
+   il1.ITEM,
+   STUFF((SELECT  ', '  + il2.PREFER_BIN + '(' + rtrim(il2.LOCATION) + ')'
+          FROM ITEMLOC il2
+          WHERE  il2.LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+		  and il2.PREFER_BIN <> '' and il2.ACTIVE_STATUS = 'A' and il2.ITEM = il1.ITEM 
+		  order by il2.LOCATION
+          FOR XML PATH('')), 1, 1, '') [PREFER_BIN]
+INTO   #StockLocations
+FROM ITEMLOC il1
+WHERE il1.LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') and il1.PREFER_BIN <> '' and il1.ACTIVE_STATUS = 'A'
+
+GROUP BY il1.ITEM
+ORDER BY 1
+
+--**Old Stock Locations
+--SELECT 
+--Row_number()
+--             OVER(
+--               ORDER BY ITEM,LOCATION) as Num,
+--	LOCATION,ITEM,
+--       PREFER_BIN
+--INTO   #StockLocations
+--FROM   ITEMLOC
+--WHERE  LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') 
+--and ACTIVE_STATUS = 'A' and ITEM in  ('61830','12296') and PREFER_BIN <> ''
+
+
+SELECT distinct  a.ITEM,
+       a.VENDOR,
+       a.VEN_ITEM,
+       a.UOM,
+       a.UOM_MULT
+INTO #ItemContract
+FROM   POVAGRMTLN a
+       INNER JOIN (SELECT ITEM,
+						  MAX(LINE_NBR)		AS LINE_NBR,
+                          Max(EFFECTIVE_DT) AS EFFECTIVE_DT,
+                          Max(EXPIRE_DT)    AS EXPIRE_DT
+                   FROM   POVAGRMTLN
+                   WHERE  HOLD_FLAG = 'N'
+                   GROUP  BY ITEM) b
+               ON a.ITEM = b.ITEM
+                  AND a.EFFECTIVE_DT = b.EFFECTIVE_DT
+                  AND a.EXPIRE_DT = b.EXPIRE_DT
+				  AND a.LINE_NBR = b.LINE_NBR
+WHERE  a.HOLD_FLAG = 'N'  
+
+--**Old Vendors
+--select distinct a.ITEM,a.VENDOR
+--into #ItemVendor
+--from ITEMSRC a
+--where a.REPLENISH_PRI = 1
+--        AND a.LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+--		and a.REPL_FROM_LOC = '' 
+
+select distinct a.ITEM,a.VENDOR
+into #ItemVendor
+from 
+	(select ITEM,max(VENDOR) as VENDOR
+		from ITEMSRC 
+		where REPLENISH_PRI = 1
+				AND LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+				and REPL_FROM_LOC = ''
+		group by ITEM) a
+
+
 
 /*********************		CREATE DimItem		**************************************/
-Declare @UseClinicalDescription int
-select @UseClinicalDescription = ConfigValue from bluebin.Config where ConfigName = 'UseClinicalDescription'         
-		
+
+
 SELECT Row_number()
          OVER(
-           ORDER BY a.INV_ITEM_ID) AS ItemKey,
-       a.INV_ITEM_ID               AS ItemID,
-       DESCR                       AS ItemDescription,
-	   ''							AS ItemDescription2,--****
-	   --DESCR                       AS ItemClinicalDescription,--****
-	   case when @UseClinicalDescription = 1 then
+           ORDER BY a.ITEM)                AS ItemKey,
+       a.ITEM                              AS ItemID,
+       a.DESCRIPTION                       AS ItemDescription,
+	   a.DESCRIPTION2					   AS ItemDescription2,
+       case 
+		when @UseClinicalDescription = 1 
+		then 
 			case 
-				when bn.INV_BRAND_NAME is null or bn.INV_BRAND_NAME = ''  then
-						case 
-							when DESCR is null or DESCR = '' then '*NEEDS*' 
-							else DESCR end 
-			else bn.INV_BRAND_NAME end 
-		else DESCR end as ItemClinicalDescription,
-	   'A'							AS ActiveStatus,--****
-       b.MFG_ID                    AS ItemManufacturer,
-       b.MFG_ITM_ID                AS ItemManufacturerNumber,
-       d.NAME1                     AS ItemVendor,
-       c.ITM_ID_VNDR               AS ItemVendorNumber,
-	   
-	   ''							AS LastPODate,--****
-       ''							AS StockLocation,--****
-       ''							AS VendorItemNumber,--****
-	   UNIT_MEASURE_STD			   AS StockUOM,
-       UNIT_MEASURE_STD            AS BuyUOM,
-       ''							AS PackageString--****
+				when e.ClinicalDescription is null 
+				then rtrim(a.DESCRIPTION) + '*' 
+				else e.ClinicalDescription end
+		else rtrim(a.DESCRIPTION) + '*' end             AS ItemClinicalDescription,
+       a.ACTIVE_STATUS                     AS ActiveStatus,
+       icm.DESCRIPTION                     AS ItemManufacturer, --b.DESCRIPTION
+	   --a.MANUF_NBR                         AS ItemManufacturer, --b.DESCRIPTION
+       a.MANUF_NBR                         AS ItemManufacturerNumber,
+       d.VENDOR_VNAME                      AS ItemVendor,
+       c.VENDOR                            AS ItemVendorNumber,
+       f.LAST_PO_DATE                      AS LastPODate,
+       ltrim(g.PREFER_BIN)                       AS StockLocation,
+       h.VEN_ITEM                          AS VendorItemNumber,
+	   a.STOCK_UOM							AS StockUOM,
+       h.UOM                               AS BuyUOM,
+       CONVERT(VARCHAR, Cast(h.UOM_MULT AS INT))
+       + ' EA' + '/'+Ltrim(Rtrim(h.UOM)) AS PackageString
 INTO   bluebin.DimItem
-FROM   dbo.MASTER_ITEM_TBL a
-       LEFT JOIN dbo.ITEM_MFG b
-              ON a.INV_ITEM_ID COLLATE DATABASE_DEFAULT = b.INV_ITEM_ID
-                 AND b.PREFERRED_MFG = 'Y'
-       LEFT JOIN dbo.ITM_VENDOR c
-              ON a.INV_ITEM_ID COLLATE DATABASE_DEFAULT = c.INV_ITEM_ID
-                 AND c.ITM_VNDR_PRIORITY = 1
-       LEFT JOIN dbo.VENDOR d
-              ON c.VENDOR_ID COLLATE DATABASE_DEFAULT = d.VENDOR_ID 
-	   left join BRAND_NAMES_INV bn on a.INV_ITEM_ID = bn.INV_ITEM_ID
+FROM   ITEMMAST a 
+     --  LEFT JOIN ITEMSRC c 
+     --         ON ltrim(rtrim(a.ITEM)) = ltrim(rtrim(c.ITEM))
+     --            AND c.REPLENISH_PRI = 1
+     --            AND c.LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+				 --and c.REPL_FROM_LOC = ''
+	   LEFT JOIN #ItemVendor c on ltrim(rtrim(a.ITEM)) = ltrim(rtrim(c.ITEM))
+       LEFT JOIN (select distinct VENDOR_GROUP,VENDOR,VENDOR_VNAME from APVENMAST) d 
+              ON ltrim(rtrim(c.VENDOR)) = ltrim(rtrim(d.VENDOR))
+       LEFT JOIN #ClinicalDescriptions e
+              ON ltrim(rtrim(a.ITEM)) = ltrim(rtrim(e.ITEM))
+       LEFT JOIN #LastPO f
+              ON rtrim(a.ITEM) = rtrim(f.ITEM)
+       LEFT JOIN #StockLocations g
+              ON ltrim(rtrim(c.ITEM)) = ltrim(rtrim(g.ITEM)) 
+       LEFT JOIN #ItemContract h
+              ON ltrim(rtrim(a.ITEM)) = ltrim(rtrim(h.ITEM)) AND ltrim(rtrim(d.VENDOR)) = ltrim(rtrim(h.VENDOR))
+		LEFT JOIN 
+			(select MANUF_CODE,max(DESCRIPTION) as [DESCRIPTION] from ICMANFCODE group by MANUF_CODE) icm
+              ON a.MANUF_CODE = icm.MANUF_CODE
+--where a.ITEM = '30003'
+order by a.ITEM
 
---select count(*) from bluebin.DimItem
+
+
+/*********************		DROP Temp Tables	*********************************/
+
+
+DROP TABLE #ClinicalDescriptions
+
+DROP TABLE #LastPO
+
+DROP TABLE #StockLocations
+
+DROP TABLE #ItemContract
+
+DROP TABLE #ItemVendor
+
 GO
---exec etl_DimItem
-
 
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
@@ -512,11 +1044,11 @@ GO
 
 
 
-/********************************************************************
+--/******************************************
 
-					DimLocation
+--			DimLocation
 
-********************************************************************/
+--******************************************/
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -525,8 +1057,7 @@ IF EXISTS ( SELECT  *
 
 DROP PROCEDURE  etl_DimLocation
 GO
---exec etl_DimLocation
---select * from bluebin.DimLocation where BlueBinFlag = 1
+
 
 CREATE PROCEDURE etl_DimLocation
 AS
@@ -540,42 +1071,38 @@ AS
   END CATCH
 
 /*********************		CREATE DimLocation	****************************/
-   declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
-   
-   
    SELECT Row_number()
-         OVER(
-           ORDER BY a.LOCATION) AS LocationKey,
-       a.LOCATION            AS LocationID,
-       UPPER(DESCR)          AS LocationName,
-	   case when @Facility is not null or @Facility <> '' then @Facility else df.FacilityID	end AS LocationFacility,
-		CASE
-             WHEN a.EFF_STATUS = 'A' and (
-											LEFT(a.LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] 
+             OVER(
+               ORDER BY REQ_LOCATION) AS LocationKey,
+           REQ_LOCATION              AS LocationID,
+           NAME                       AS LocationName,
+           COMPANY                    AS LocationFacility,
+           CASE
+             WHEN ACTIVE_STATUS = 'A' and (
+											LEFT(REQ_LOCATION, 2) IN (SELECT [ConfigValue]
                                             FROM   [bluebin].[Config]
                                             WHERE  [ConfigName] = 'REQ_LOCATION'
                                                    AND Active = 1) 
-										or a.LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION)
+										or convert(varchar(10),COMPANY)+'-'+REQ_LOCATION in (select convert(varchar(10),COMPANY)+'-'+REQ_LOCATION from bluebin.ALT_REQ_LOCATION)
 											)		   
 												   
 										THEN 1
              ELSE 0
            END                        AS BlueBinFlag,
-		   a.EFF_STATUS as ACTIVE_STATUS
-INTO bluebin.DimLocation
-FROM   dbo.LOCATION_TBL a 
-INNER JOIN (SELECT LOCATION, MIN(EFFDT) AS EFFDT FROM dbo.LOCATION_TBL where EFF_STATUS = 'A' GROUP BY LOCATION) b ON a.LOCATION  = b.LOCATION AND a.EFFDT = b.EFFDT 
-LEFT JOIN bluebin.DimFacility df on a.SETID COLLATE DATABASE_DEFAULT = df.FacilityName
-
-WHERE  a.EFF_STATUS = 'A'
+		   ACTIVE_STATUS
+    INTO   bluebin.DimLocation
+    FROM   
+		(
+		select distinct REQ_LOCATION,NAME,COMPANY,ACTIVE_STATUS FROM RQLOC
+		) a 
+	--where COMPANY like '3201' and REQ_LOCATION = 'NICU'
+	
 
 GO
 
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimLocation'
-GO
 
 
 
@@ -719,6 +1246,7 @@ SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimBinStatus'
 GO
 
+
 /***********************************************************
 
 			DimBin
@@ -737,7 +1265,7 @@ CREATE PROCEDURE etl_DimBin
 
 AS
 
---exec etl_DimBin
+--exec etl_DimBin select * from bluebin.DimBin
 /***************************		DROP DimBin		********************************/
 BEGIN TRY
     DROP TABLE bluebin.DimBin
@@ -749,127 +1277,169 @@ END CATCH
 
 --/***************************		CREATE Temp Tables		*************************/
 
+/* Old Bin Added Dates
+SELECT REQ_LOCATION,
+       Min(CREATION_DATE) AS BinAddedDate
+INTO   #BinAddDates
+FROM   REQLINE a INNER JOIN bluebin.DimLocation b ON a.REQ_LOCATION = b.LocationID
+WHERE  b.BlueBinFlag = 1
+GROUP  BY REQ_LOCATION
+*/
 
-/***********************************		CREATE	DimBin		***********************************/
-declare @Facility int, @UsePriceList int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
-   select @UsePriceList = ConfigValue from bluebin.Config where ConfigName = 'PS_UsePriceList'
- 
-
+--**New Bin Added Dates
+select 
+il.LOCATION as REQ_LOCATION,
+il.ITEM,
+case when il.ADDED_DATE > loc.BinAddedDate then il.ADDED_DATE else COALESCE(loc.BinAddedDate,il.ADDED_DATE) end as BinAddedDate
+INTO   #BinAddDates
+from ITEMLOC il
+	INNER JOIN 
+	(SELECT REQ_LOCATION,
+		   Min(CREATION_DATE) AS BinAddedDate
+	FROM   REQLINE a INNER JOIN bluebin.DimLocation b ON a.REQ_LOCATION = b.LocationID
+	WHERE  b.BlueBinFlag = 1
+	GROUP  BY REQ_LOCATION) loc on il.LOCATION = loc.REQ_LOCATION 
+--WHERE il.ITEM in ('44359','259','44214','260','995','27198','29672') order by 2,1
 
 SELECT Row_number()
          OVER(
-           ORDER BY Locations.LOCATION, Bins.INV_ITEM_ID) AS BinKey,
-       --Bins.INV_CART_ID                                 AS CartID,
-	   case when @Facility is not null or @Facility <> '' then @Facility else ''end	as BinFacility,
-       Bins.INV_ITEM_ID                                 AS ItemID,
-       Locations.LOCATION                               AS LocationID,
-       Bins.COMPARTMENT                                 AS BinSequence,
-		CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then LEFT(Bins.COMPARTMENT,2) 
-				else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN LEFT(Bins.COMPARTMENT, 2) ELSE LEFT(Bins.COMPARTMENT, 1) END END as BinCart,
-			CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then SUBSTRING(Bins.COMPARTMENT, 3, 1) 
-				else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN SUBSTRING(Bins.COMPARTMENT, 3, 1) ELSE SUBSTRING(Bins.COMPARTMENT, 2,1) END END as BinRow,
-			CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then SUBSTRING(Bins.COMPARTMENT, 4, 2)
-				else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN SUBSTRING (Bins.COMPARTMENT,4,2) ELSE SUBSTRING(Bins.COMPARTMENT, 3,2) END END as BinPosition,	
-			
-           CASE
-             WHEN Bins.COMPARTMENT LIKE 'CARD%' THEN 'WALL'
-             ELSE 
-				case when LEN(Bins.COMPARTMENT) = 6 then RIGHT(Bins.COMPARTMENT, 2)
-				else RIGHT(Bins.COMPARTMENT, 3) end
-           END                                           AS BinSize,
-       Bins.UNIT_OF_MEASURE                             AS BinUOM,
-       Cast(Bins.QTY_OPTIMAL AS INT)                    AS BinQty,
-       convert(int,(Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime') )        AS BinLeadTime,
-	   Locations.EFFDT									AS BinGoLiveDate,
-	   
-		--bu.LAST_PRICE_PAID AS BinCurrentCost,
-  --     bu.CONSIGNED_FLAG AS BinConsignmentFlag,
-		CASE
-			When @UsePriceList = 1 then
-			COALESCE(bu.PRICE_LIST,bu.LAST_PRICE_PAID,bu.LAST_PO_PRICE_PAID,0)
-			Else
-			COALESCE(bu.LAST_PRICE_PAID,bu.LAST_PO_PRICE_PAID,bu.PRICE_LIST,0) 
-			end AS BinCurrentCost,
-       COALESCE(bu.CONSIGNED_FLAG_BU,bu.CONSIGNED_FLAG_M,'N') AS BinConsignmentFlag,
-       '' AS BinGLAccount,
-	   'Awaiting Updated Status'						 AS BinCurrentStatus
+           Partition BY ITEM, ENTERED_UOM
+           ORDER BY CREATION_DATE DESC) AS Itemreqseq,
+       ITEM,
+       ENTERED_UOM,
+       UNIT_COST
+INTO   #ItemReqs
+FROM   REQLINE a INNER JOIN bluebin.DimLocation b ON ltrim(rtrim(a.REQ_LOCATION)) = ltrim(rtrim(b.LocationID))
+WHERE  b.BlueBinFlag = 1 
+
+SELECT Row_number()
+         OVER(
+           Partition BY ITEM, ENT_BUY_UOM
+           ORDER BY PO_NUMBER DESC) AS ItemOrderSeq,
+       ITEM,
+       ENT_BUY_UOM,
+       ENT_UNIT_CST
+INTO   #ItemOrders
+FROM   POLINE
+WHERE  ITEM_TYPE IN ( 'I', 'N' )
+       AND ITEM IN (SELECT DISTINCT ITEM
+                    FROM   ITEMLOC a INNER JOIN bluebin.DimLocation b ON ltrim(rtrim(a.LOCATION)) = ltrim(rtrim(b.LocationID))
+WHERE  b.BlueBinFlag = 1)
 
 
-INTO   bluebin.DimBin
-FROM   
-	(
-	select distinct 
-	c.INV_CART_ID, 
-	c.INV_ITEM_ID,
-	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end as COMPARTMENT,
-	c.QTY_OPTIMAL,
-	c.UNIT_OF_MEASURE
-	
-	 from dbo.CART_TEMPL_INV c
-	 inner join (select INV_CART_ID, INV_ITEM_ID, max(ISNULL(COUNT_ORDER,1)) as COUNT_ORDER from CART_TEMPL_INV where COUNT_ORDER is not null 
-	 --and LEN(COMPARTMENT) >=6 
-	 group by INV_CART_ID, INV_ITEM_ID) a 
-		on c.INV_CART_ID = a.INV_CART_ID and c.INV_ITEM_ID = a.INV_ITEM_ID and ISNULL(c.COUNT_ORDER,1) = a.COUNT_ORDER
-	 --where c.INV_ITEM_ID = '1446' and c.INV_CART_ID = 'L0153'
-	 group by 
-	 c.INV_CART_ID, 
-	c.INV_ITEM_ID,
-	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end,
-	c.QTY_OPTIMAL,
-	c.UNIT_OF_MEASURE ) Bins
-	          
-	  LEFT JOIN dbo.CART_ATTRIB_INV Carts
-              ON Bins.INV_CART_ID = Carts.INV_CART_ID
-        LEFT JOIN dbo.LOCATION_TBL Locations
-              ON Carts.LOCATION = Locations.LOCATION
-		INNER JOIN bluebin.DimLocation dl
-              ON Locations.LOCATION COLLATE DATABASE_DEFAULT = dl.LocationID
-		--LEFT JOIN dbo.BU_ITEMS_INV bu on Bins.INV_ITEM_ID = bu.INV_ITEM_ID  and bu.BUSINESS_UNIT in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
-		LEFT JOIN
-		(select
-			m.INV_ITEM_ID
-			,case when bu.LAST_PRICE_PAID = 0 then NULL else bu.LAST_PRICE_PAID end as LAST_PRICE_PAID
-			,case when p.LAST_PO_PRICE_PAID = 0 then NULL else p.LAST_PO_PRICE_PAID end as LAST_PO_PRICE_PAID
-			,case when p.PRICE_LIST = 0 then NULL else p.PRICE_LIST end as PRICE_LIST
-			,bu.CONSIGNED_FLAG as CONSIGNED_FLAG_BU
-			,m.CONSIGNED_FLAG as CONSIGNED_FLAG_M
 
-			from (select INV_ITEM_ID,max(CONSIGNED_FLAG) as CONSIGNED_FLAG from MASTER_ITEM_TBL group by INV_ITEM_ID) m 
-			LEFT JOIN PURCH_ITEM_ATTR p on m.INV_ITEM_ID = p.INV_ITEM_ID
-			--LEFT JOIN BU_ITEMS_INV bu on m.INV_ITEM_ID = bu.INV_ITEM_ID and bu.BUSINESS_UNIT in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
-			LEFT JOIN
-				(select a.BUSINESS_UNIT,a.CONSIGNED_FLAG,a.INV_ITEM_ID,max(a.LAST_PRICE_PAID) as LAST_PRICE_PAID
-					from BU_ITEMS_INV a
-					inner join (select BUSINESS_UNIT,INV_ITEM_ID,max(LAST_ORDER_DATE) as LAST_ORDER_DATE from BU_ITEMS_INV group by BUSINESS_UNIT,INV_ITEM_ID) b 
-							on a.BUSINESS_UNIT = b.BUSINESS_UNIT and a.INV_ITEM_ID = b.INV_ITEM_ID and a.LAST_ORDER_DATE = b.LAST_ORDER_DATE
-					group by a.BUSINESS_UNIT,a.CONSIGNED_FLAG,a.INV_ITEM_ID) bu on m.INV_ITEM_ID = bu.INV_ITEM_ID and bu.BUSINESS_UNIT in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
-
-			) bu on Bins.INV_ITEM_ID = bu.INV_ITEM_ID
-
+SELECT distinct a.ITEM,
+       --a.GL_CATEGORY,
+       max(b.ISS_ACCOUNT) as ISS_ACCOUNT--,a.LOCATION
+INTO   #ItemAccounts
+FROM   ITEMLOC a 
+		LEFT JOIN ICCATEGORY b
+              ON a.GL_CATEGORY = b.GL_CATEGORY
+                 AND a.LOCATION = b.LOCATION
 WHERE  
-		
-		dl.BlueBinFlag = 1 and
-		LEN(COMPARTMENT) >=6 and 
-		(LEFT(Locations.LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
-		or Locations.LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
-
-		--and Bins.INV_ITEM_ID = '1446' and Bins.INV_CART_ID = 'L0153'
-		
-		order by Locations.LOCATION,Bins.INV_ITEM_ID 
+a.LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') 
+and a.ACTIVE_STATUS = 'A' 
+group by a.ITEM
+--order by a.ITEM
+       --,a.GL_CATEGORY
 
 
+
+
+SELECT distinct 
+i.ITEM,
+c.LAST_ISS_COST
+INTO   #ItemStore
+FROM   ITEMLOC i
+left join (select ITEMLOC.ITEM,max(ITEMLOC.LAST_ISS_COST) as LAST_ISS_COST from ITEMLOC
+				inner join (select ITEM,max(LAST_ISSUE_DT) as t from ITEMLOC group by ITEM) cost on ITEMLOC.ITEM = cost.ITEM and ITEMLOC.LAST_ISSUE_DT = cost.t
+				group by ITEMLOC.ITEM ) c on i.ITEM = c.ITEM
+WHERE  i.LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')  and i.ACTIVE_STATUS = 'A'  
+--order by i.ITEM
+
+SELECT distinct ITEM,CONSIGNMENT_FL 
+INTO #Consignment
+FROM ITEMMAST
+WHERE  ITEM in (select ITEM from ITEMLOC where LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')) 
+order by ITEM
+
+
+/***********************************		CREATE	DimBin		***********************************/
+
+SELECT Row_number()
+             OVER(
+               ORDER BY ITEMLOC.LOCATION, ITEMLOC.ITEM)                                               AS BinKey,
+			   ITEMLOC.COMPANY																			AS BinFacility,
+           ITEMLOC.ITEM                                                                               AS ItemID,
+           ITEMLOC.LOCATION                                                                           AS LocationID,
+           PREFER_BIN                                                                                 AS BinSequence,
+		   		   	CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then LEFT(PREFER_BIN,2) 
+				else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN LEFT(PREFER_BIN, 2) ELSE LEFT(PREFER_BIN, 1) END END as BinCart,
+			CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then SUBSTRING(PREFER_BIN, 3, 1) 
+				else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN SUBSTRING(PREFER_BIN, 3, 1) ELSE SUBSTRING(PREFER_BIN, 2,1) END END as BinRow,
+			CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then SUBSTRING(PREFER_BIN, 4, 2)
+				else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN SUBSTRING (PREFER_BIN,4,2) ELSE SUBSTRING(PREFER_BIN, 3,2) END END as BinPosition,	
+			CASE
+				WHEN PREFER_BIN LIKE 'CARD%' THEN 'WALL'
+					ELSE 
+						CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then RIGHT(PREFER_BIN,2) 
+							else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN RIGHT(PREFER_BIN, 2) ELSE RIGHT(PREFER_BIN, 3) END END
+           END                                                                                        AS BinSize,
+           UOM                                                                                        AS BinUOM,
+           REORDER_POINT                                                                              AS BinQty,
+           CASE
+             WHEN LEADTIME_DAYS = 0 or LEADTIME_DAYS is null THEN (Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime')
+             ELSE LEADTIME_DAYS
+           END                                                                                        AS BinLeadTime,
+           #BinAddDates.BinAddedDate                                                                  AS BinGoLiveDate,
+           COALESCE(COALESCE(#ItemReqs.UNIT_COST, #ItemOrders.ENT_UNIT_CST), #ItemStore.LAST_ISS_COST) AS BinCurrentCost,
+           CASE
+			 WHEN UPPER(ltrim(rtrim(ITEMLOC.USER_FIELD1))) in (Select ConfigValue from bluebin.Config where ConfigName = 'ConsignmentFlag') OR #Consignment.CONSIGNMENT_FL = 'Y'  THEN 'Y'
+             ELSE 'N'
+           END                                                                                        AS BinConsignmentFlag,
+           #ItemAccounts.ISS_ACCOUNT                                                                  AS BinGLAccount,
+		   'Awaiting Updated Status'																							AS BinCurrentStatus
+    INTO   bluebin.DimBin
+    FROM   ITEMLOC  
+           INNER JOIN bluebin.DimLocation
+                   ON ltrim(rtrim(ITEMLOC.LOCATION)) = ltrim(rtrim(DimLocation.LocationID))
+				   AND ITEMLOC.COMPANY = DimLocation.LocationFacility			   
+           INNER JOIN #BinAddDates
+                   ON ltrim(rtrim(ITEMLOC.LOCATION)) = ltrim(rtrim(#BinAddDates.REQ_LOCATION)) and ltrim(rtrim(ITEMLOC.ITEM)) = ltrim(rtrim(#BinAddDates.ITEM))
+           LEFT JOIN #ItemReqs
+                  ON ITEMLOC.ITEM = #ItemReqs.ITEM
+                     AND ITEMLOC.UOM = #ItemReqs.ENTERED_UOM
+                     AND #ItemReqs.Itemreqseq = 1
+           LEFT JOIN #ItemOrders
+                  ON ITEMLOC.ITEM = #ItemOrders.ITEM
+                     AND ITEMLOC.UOM = #ItemOrders.ENT_BUY_UOM
+                     AND #ItemOrders.ItemOrderSeq = 1
+           LEFT JOIN #ItemAccounts
+                  ON ITEMLOC.ITEM = #ItemAccounts.ITEM
+           LEFT JOIN #ItemStore
+                  ON ITEMLOC.ITEM = #ItemStore.ITEM
+		   LEFT JOIN #Consignment
+                  ON ITEMLOC.ITEM = #Consignment.ITEM
+	WHERE DimLocation.BlueBinFlag = 1
+	order by LocationID,ItemID
+	
 /*****************************************		DROP Temp Tables	**************************************/
+
+DROP TABLE #BinAddDates
+DROP TABLE #ItemReqs
+DROP TABLE #ItemOrders
+DROP TABLE #ItemAccounts
+DROP TABLE #ItemStore
+DROP TABLE #Consignment
 
 
 GO
+
+
 
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimBin'
-
-GO
-
 
 
 
@@ -890,7 +1460,7 @@ DROP PROCEDURE  etl_FactScan
 GO
 
 CREATE PROCEDURE etl_FactScan
---exec etl_FactScan
+
 AS
 
 /*****************************		DROP FactScan		*******************************/
@@ -902,253 +1472,230 @@ END Try
 BEGIN Catch
 END Catch
 
---select * from PO_LINE_DISTRIB where LOCATION like '%BB%'
---select * from PO_LINE where PO_ID in (select PO_ID from PO_LINE_DISTRIB where LOCATION like '%BB%')
---select * from PO_HDR where PO_ID in (select PO_ID from PO_LINE_DISTRIB where LOCATION like '%BB%')
+--/********************************		CREATE Temp Tables			******************************/
+
+SELECT COMPANY,
+       CASE 
+			WHEN LEN(DOCUMENT) = 10 and LEFT(DOCUMENT,6) = '000000' THEN RIGHT(DOCUMENT,4)
+			WHEN LEN(DOCUMENT) = 10 and LEFT(DOCUMENT,5) = '00000' THEN RIGHT(DOCUMENT,5)
+			WHEN LEN(DOCUMENT) = 10 and LEFT(DOCUMENT,4) = '0000' THEN RIGHT(DOCUMENT,6)
+			WHEN LEN(DOCUMENT) = 10 and LEFT(DOCUMENT,3) = '000' THEN RIGHT(DOCUMENT,7)
+		ELSE DOCUMENT 
+		END AS DOCUMENT,
+       LINE_NBR,
+	   SUM((QUANTITY*-1)) as QUANTITY,
+       MAX((Cast(CONVERT(VARCHAR, TRANS_DATE, 101) + ' '
+            + LEFT(RIGHT('00000' + CONVERT(VARCHAR, ACTUAL_TIME), 4), 2)
+            + ':'
+            + Substring(RIGHT('00000' + CONVERT(VARCHAR, ACTUAL_TIME), 4), 3, 2) AS DATETIME))) AS TRANS_DATE
+INTO #ICTRANS
+FROM   ICTRANS a
+       INNER JOIN bluebin.DimLocation b
+               ON a.FROM_TO_LOC = b.LocationID 
+WHERE b.BlueBinFlag = 1 and DOCUMENT not like '%[A-Z]%' and DOCUMENT not like '%/%' and try_convert(bigint,DOCUMENT) < 2147483647  
+--and DOCUMENT like '%270943%'
+group by 
+COMPANY,
+       CASE 
+			WHEN LEN(DOCUMENT) = 10 and LEFT(DOCUMENT,6) = '000000' THEN RIGHT(DOCUMENT,4)
+			WHEN LEN(DOCUMENT) = 10 and LEFT(DOCUMENT,5) = '00000' THEN RIGHT(DOCUMENT,5)
+			WHEN LEN(DOCUMENT) = 10 and LEFT(DOCUMENT,4) = '0000' THEN RIGHT(DOCUMENT,6)
+			WHEN LEN(DOCUMENT) = 10 and LEFT(DOCUMENT,3) = '000' THEN RIGHT(DOCUMENT,7)
+		ELSE DOCUMENT 
+		END,
+       LINE_NBR
+--select * from ICTRANS where DOCUMENT like '%270943%'
+
+SELECT COMPANY,
+	   CASE 
+			WHEN LEN(REQ_NUMBER) = 10 and LEFT(REQ_NUMBER,6) = '000000' THEN RIGHT(REQ_NUMBER,4)
+			WHEN LEN(REQ_NUMBER) = 10 and LEFT(REQ_NUMBER,5) = '00000' THEN RIGHT(REQ_NUMBER,5)
+			WHEN LEN(REQ_NUMBER) = 10 and LEFT(REQ_NUMBER,4) = '0000' THEN RIGHT(REQ_NUMBER,6)
+			WHEN LEN(REQ_NUMBER) = 10 and LEFT(REQ_NUMBER,3) = '000' THEN RIGHT(REQ_NUMBER,7)
+		ELSE REQ_NUMBER 
+		END AS REQ_NUMBER,
+       LINE_NBR,
+       ITEM,
+       REQ_LOCATION,
+       ENTERED_UOM,
+       QUANTITY,
+       ITEM_TYPE,
+       CREATION_TIME,
+	   CLOSED_FL,
+       case	
+		when convert(int,(Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 5, 2))) < 60
+		then 
+		   Cast(CONVERT(VARCHAR, CREATION_DATE, 101) + ' '
+				+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 5, 2) AS DATETIME)
+		else
+			Cast(CONVERT(VARCHAR, CREATION_DATE, 101) + ' '
+				+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
+				+ ':59' AS DATETIME)
+		end AS CREATION_DATE
+INTO #REQLINE
+FROM   REQLINE
+WHERE  STATUS = 9
+       AND KILL_QUANTITY = 0 
+--and REQ_NUMBER like '%603585%'
+
+SELECT 
+a.COMPANY,
+		CASE
+			WHEN LEN(a.SOURCE_DOC_N) = 10 and LEFT(a.SOURCE_DOC_N,6) = '000000' THEN RIGHT(a.SOURCE_DOC_N,4)
+			WHEN LEN(a.SOURCE_DOC_N) = 10 and LEFT(a.SOURCE_DOC_N,5) = '00000' THEN RIGHT(a.SOURCE_DOC_N,5)
+			WHEN LEN(a.SOURCE_DOC_N) = 10 and LEFT(a.SOURCE_DOC_N,4) = '0000' THEN RIGHT(a.SOURCE_DOC_N,6)
+			WHEN LEN(a.SOURCE_DOC_N) = 10 and LEFT(a.SOURCE_DOC_N,3) = '000' THEN RIGHT(a.SOURCE_DOC_N,7)	
+		ELSE a.SOURCE_DOC_N 
+		END AS REQ_NUMBER,
+       a.SRC_LINE_NBR                                                                         AS LINE_NBR,
+       MIN(Cast(CONVERT(VARCHAR, b.REC_DATE, 101) + ' '
+			+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, ISNULL(b.UPDATE_TIME,'00000000')), 6), 2)
+            + ':'
+            + Substring(RIGHT('00000' + CONVERT(VARCHAR, ISNULL(b.UPDATE_TIME,'00000000')), 6), 3, 2)
+            + ':'
+            + Substring(RIGHT('00000' + CONVERT(VARCHAR, ISNULL(b.UPDATE_TIME,'00000000')), 6), 5, 2) AS DATETIME)) AS REC_DATE
+
+INTO #POLINE
+FROM   POLINESRC a
+       LEFT JOIN PORECLINE b
+               ON a.PO_NUMBER = b.PO_NUMBER
+                  AND a.LINE_NBR = b.PO_LINE_NBR
+					AND a.COMPANY = b.COMPANY 
 
 
---**************************
-declare @DefaultLT int = (Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime')
-declare @POTimeAdjust int = (Select max(ConfigValue) from bluebin.Config where ConfigName = 'PS_POTimeAdjust')
-;
-WITH FirstScans
-     AS (
-/* Original Query	 
-	 SELECT INV_CART_ID      AS LocationID,
-                INV_ITEM_ID      AS ItemID,
-                Min(DEMAND_DATE) AS FirstScanDate
-         FROM   dbo.CART_CT_INF_INV
-         WHERE  CART_COUNT_QTY > 0
-                AND PROCESS_INSTANCE > 0
-         GROUP  BY INV_CART_ID,
-                   INV_ITEM_ID
-				   */
-		select
-		LocationID,
-		ItemID,
-		COALESCE(DEMAND_DATE,SCHED_DTTM,NULL) as FirstScanDate
-		from 
-				(
-				SELECT db.LocationID,
-					   db.ItemID,
-						Min(ct.DEMAND_DATE) AS DEMAND_DATE,
-						min(id.SCHED_DTTM) as SCHED_DTTM
-				 FROM   bluebin.DimBin db
-				 LEFT JOIN dbo.CART_CT_INF_INV ct on db.LocationID = ct.INV_CART_ID and db.ItemID = ct.INV_ITEM_ID and ct.CART_COUNT_QTY > 0 AND ct.PROCESS_INSTANCE > 0
-				 LEFT JOIN IN_DEMAND id on db.LocationID = id.LOCATION and db.ItemID = id.INV_ITEM_ID
-				 GROUP  BY 
-				 db.LocationID,
-				  db.ItemID
-				  ) a 
-				   
-				   ),
---**************************
-Orders
-     AS (
-	 SELECT Row_number()
-                  OVER(
-                    PARTITION BY PO_LN.INV_ITEM_ID, PO_LN_DST.LOCATION, PO_HDR.PO_DT
-                    ORDER BY PO_LN.PO_ID, PO_LN.LINE_NBR) AS DailySeq,
-                Bins.BinKey,
-				--Bins.BinGoLiveDate,
-                PO_LN.INV_ITEM_ID                         AS ItemID,
-                PO_LN_DST.LOCATION                        AS LocationID,
-                PO_LN.PO_ID                               AS OrderNum,
-                PO_LN.LINE_NBR                            AS LineNum,
-                RECEIPT_DTTM                              AS CloseDate,
-                QTY_PO                                    AS OrderQty,
-                PO_LN.UNIT_OF_MEASURE                     AS OrderUOM,
-                DATEADD(hour,@POTimeAdjust,PO_HDR.PO_DT) as PO_DT
-         FROM   dbo.PO_LINE_DISTRIB PO_LN_DST
-                INNER JOIN dbo.PO_LINE PO_LN
-                        ON PO_LN_DST.PO_ID = PO_LN.PO_ID
-                           AND PO_LN_DST.LINE_NBR = PO_LN.LINE_NBR
-                INNER JOIN dbo.PO_HDR
-                        ON PO_LN.PO_ID = PO_HDR.PO_ID
-                INNER JOIN bluebin.DimBin Bins
-                        ON PO_LN.INV_ITEM_ID = Bins.ItemID
-                           AND Bins.LocationID = PO_LN_DST.LOCATION
-                LEFT JOIN
-					(select PO_ID,LINE_NBR,max(RECEIPT_DTTM) as RECEIPT_DTTM from dbo.RECV_LN_SHIP group by PO_ID,LINE_NBR) SHIP
-						ON PO_LN.PO_ID = SHIP.PO_ID
-                          AND PO_LN.LINE_NBR = SHIP.LINE_NBR
-				--LEFT JOIN dbo.RECV_LN_SHIP SHIP
-    --                   ON PO_LN.PO_ID = SHIP.PO_ID
-    --                      AND PO_LN.LINE_NBR = SHIP.LINE_NBR
-                LEFT JOIN FirstScans
-                       ON PO_LN.INV_ITEM_ID = FirstScans.ItemID
-                          AND PO_LN_DST.LOCATION = FirstScans.LocationID
-         WHERE  (LEFT(PO_LN_DST.LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
-				or PO_LN_DST.LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
-                AND ISNULL(PO_LN.CANCEL_STATUS,'') NOT IN ( 'X', 'D', 'PX' )
-				--AND PO_LN_DST.LOCATION = 'B039012050' --and PO_LN.INV_ITEM_ID = '1000234' 
-				--and DATEADD(hour,@POTimeAdjust,PO_HDR.PO_DT) > getdate() -5
-                --AND PO_LN_DST.BUSINESS_UNIT_GL = 209
-				)
-
-				,
+GROUP BY
+	a.COMPANY,
+	a.SOURCE_DOC_N,
+	a.SRC_LINE_NBR
 
 
 
---**************************
-CartCounts
-     AS (SELECT Row_number()
-                  OVER(
-                    PARTITION BY INV_CART_ID, INV_ITEM_ID, DEMAND_DATE
-                    ORDER BY LAST_DTTM_UPDATE) AS DailySeq,
-                INV_CART_ID                    AS LocationID,
-                INV_ITEM_ID					   AS ItemID,
-                DEMAND_DATE                    AS PO_DT,
-                LAST_DTTM_UPDATE               AS SCAN_DATE
-				--CART_COUNT_QTY
-         FROM   dbo.CART_CT_INF_INV
-         WHERE  --CART_COUNT_QTY <> 0 AND
-                --AND CART_REPLEN_OPT = '02'
-				(LEFT(INV_CART_ID, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
-				or INV_CART_ID COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))),
---**************************
-tmpLines AS (
-SELECT a.BinKey,
-       --a.BinGoLiveDate,
-	   a.ItemID,
-       a.LocationID,
-       a.OrderNum,
-       a.LineNum,
-       COALESCE(b.SCAN_DATE,a.PO_DT)                 AS OrderDate,
-       a.CloseDate,
-       a.OrderQty,
-       a.OrderUOM,
-	   'PO' as OrderType,
-		'No' as Cancelled
-FROM   Orders a
-       LEFT JOIN CartCounts b
-               ON a.LocationID = b.LocationID
-                  AND a.ItemID = b.ItemID
-                  AND a.PO_DT = b.PO_DT
-                  AND a.DailySeq = b.DailySeq 
+Select
+b.COMPANY,
+CASE
+			WHEN LEN(a.SOURCE_DOC_N) = 10 and LEFT(a.SOURCE_DOC_N,6) = '000000' THEN RIGHT(a.SOURCE_DOC_N,4)
+			WHEN LEN(a.SOURCE_DOC_N) = 10 and LEFT(a.SOURCE_DOC_N,5) = '00000' THEN RIGHT(a.SOURCE_DOC_N,5)
+			WHEN LEN(a.SOURCE_DOC_N) = 10 and LEFT(a.SOURCE_DOC_N,4) = '0000' THEN RIGHT(a.SOURCE_DOC_N,6)
+			WHEN LEN(a.SOURCE_DOC_N) = 10 and LEFT(a.SOURCE_DOC_N,3) = '000' THEN RIGHT(a.SOURCE_DOC_N,7)	
+		ELSE a.SOURCE_DOC_N 
+		END AS REQ_NUMBER,
+        b.ITEM,
+		a.SRC_LINE_NBR                                                                         AS LINE_NBR, 
+		CLOSE_DATE   as CancelDate,
+		'Yes' as Cancelled
+INTO #CancelledLines
+FROM POLINE b
+INNER JOIN POLINESRC a on b.COMPANY = a.COMPANY and b.PO_NUMBER = a.PO_NUMBER AND b.LINE_NBR = a.LINE_NBR
+WHERE b.CXL_QTY >= b.QUANTITY and b.CLOSED_FL = 'Y' --and a.SOURCE_DOC_N like '%270943%'
 
-UNION ALL
-SELECT Bins.BinKey,
---Bins.BinGoLiveDate,
-       INV_ITEM_ID as ItemID,
-       LOCATION as LocationID,
-       Picks.ORDER_NO as OrderNum,
-       Picks.ORDER_INT_LINE_NO as LineNum,
-       Picks.SCHED_DTTM as OrderDate,
-       Picks.PICK_CONFIRM_DTTM as CloseDate,
-       Cast(Picks.QTY_REQUESTED AS INT) AS OrderQty,
-	   UNIT_OF_MEASURE as OrderUOM,
-	   CASE
-         WHEN Picks.ORDER_NO LIKE 'MSR%' THEN 'MSR'
-         ELSE 'Pick' end as OrderType,
-		case when IN_FULFILL_STATE = '70' and QTY_PICKED = '0' or IN_FULFILL_STATE = '90' then 'Yes' else 'No' end as Cancelled
 
-FROM   dbo.IN_DEMAND Picks
-       INNER JOIN bluebin.DimBin Bins
-               ON Picks.LOCATION = Bins.LocationID
-                  AND Picks.INV_ITEM_ID = Bins.ItemID
-		LEFT JOIN FirstScans
-		ON Picks.INV_ITEM_ID = FirstScans.ItemID AND Picks.LOCATION = FirstScans.LocationID
-WHERE  (LEFT(LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
-		or LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
-       AND (CANCEL_DTTM IS NULL  or CANCEL_DTTM < '1900-01-02')
-	   AND DEMAND_DATE >= FirstScanDate --ISNULL(FirstScanDate,Bins.BinGoLiveDate)
 
-	   )
-	   
-	   ,
---**************************	   
-tmpOrders 
-	AS (
-	SELECT Row_number()
+
+SELECT 
+Row_number()
          OVER(
-           Partition BY BinKey
-           ORDER BY OrderDate) AS OrderSeq,
-		   *
-       --*,
-       --CASE
-       --  WHEN OrderNum LIKE 'MSR%' THEN 'MSR'
-       --  ELSE 'PO'
-       --END                     AS OrderType
+           Partition BY b.BinKey
+           ORDER BY a.CREATION_DATE DESC) AS Scanseq,
+       Row_number()
+         OVER(
+           Partition BY b.BinKey
+           ORDER BY a.CREATION_DATE ASC) AS ScanHistseq,
+       a.COMPANY					AS OrderFacility,
+	   b.BinKey,
+	   b.BinLeadTime,
+       b.LocationID,
+       b.ItemID,
+       b.BinGoLiveDate,
+       a.ITEM_TYPE                   AS ItemType,
+       a.REQ_NUMBER                  AS OrderNum,
+       a.LINE_NBR                    AS LineNum,
+       a.ENTERED_UOM                 AS OrderUOM,
+       a.QUANTITY                    AS OrderQty,
+       a.CREATION_DATE               AS OrderDate,
+       CASE
+         WHEN a.ITEM_TYPE = 'I' and e.QUANTITY >= a.QUANTITY OR a.ITEM_TYPE = 'I' and a.CLOSED_FL = 'Y' --Additional logic to add if checking for Quantity on the ICTrans.  Not currently doing so.*/
+			THEN e.TRANS_DATE
+         WHEN a.ITEM_TYPE = 'N' 
+			THEN c.REC_DATE 
+         ELSE NULL
+       END                           AS OrderCloseDate,
+	   case 
+	   when a.CLOSED_FL = 'Y' and ((c.REQ_NUMBER is null and a.ITEM_TYPE = 'N') or (e.DOCUMENT is null and e.TRANS_DATE is null and a.ITEM_TYPE = 'I')) then a.CREATION_DATE
+	   else d.CancelDate end as OrderCancelDate
+INTO   #tmpScan  
+FROM   #REQLINE a
+       INNER JOIN bluebin.DimBin b
+               ON a.ITEM = b.ItemID
+                  AND a.REQ_LOCATION = b.LocationID
+				  AND a.COMPANY = b.BinFacility
+       LEFT JOIN #POLINE c 
+			ON a.REQ_NUMBER = c.REQ_NUMBER 
+			AND a.LINE_NBR = c.LINE_NBR
+			--AND a.COMPANY = c.COMPANY		--Remove case if Multiple Companies
+	   --LEFT JOIN  (select COMPANY,DOCUMENT,LINE_NBR,max(TRANS_DATE) as TRANS_DATE from #ICTRANS group by COMPANY,DOCUMENT,LINE_NBR) e --Different join logic if you remove the group in the #ICTRANS table
+	   LEFT JOIN #ICTRANS e
+               ON a.REQ_NUMBER = e.DOCUMENT
+               AND a.LINE_NBR = e.LINE_NBR
+			--AND a.COMPANY = e.COMPANY		--Remove case if Multiple Companies
+		LEFT JOIN #CancelledLines d 
+			ON a.REQ_NUMBER = d.REQ_NUMBER 
+			AND a.LINE_NBR = d.LINE_NBR
+			--and a.COMPANY = d.COMPANY		--Remove case if Multiple Companies
+where d.Cancelled is null
 
-FROM   tmpLines
-where Cancelled = 'No'
-),
+/***********************************		CREATE FactScan		****************************************/
+declare @DefaultLT int = (Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime')
 
---**************************
-Scans
-     AS (
-  SELECT Row_number()
-                  OVER(
-                    Partition BY o.BinKey
-                    ORDER BY o.OrderDate DESC) AS Scanseq,
-					Row_number()
-                  OVER(
-                    Partition BY o.BinKey
-                    ORDER BY o.OrderDate ASC) AS ScanHistseq,
-                o.BinKey,
-				--o.BinGoLiveDate,
-                o.LocationID,
-                o.ItemID,
-                '' as OrderTypeID,
-                o.OrderType,
-                '' as CartCountNum,
-                o.OrderNum,
-                o.LineNum,
-				o.OrderUOM,
-                o.OrderQty,
-                o.OrderDate,
-                o.CloseDate
-        FROM   
-               tmpOrders o
-			    
-				)--select * from Scans where BinKey = '825' order by OrderDate
-
-
-				
 SELECT a.Scanseq,
-		a.ScanHistseq,
-	   a.BinKey,
+       a.ScanHistseq,
+       a.BinKey,
        c.LocationKey,
        d.ItemKey,
-	   db.BinGoLiveDate,
-       --COALESCE(a.OrderTypeID, '-') as OrderTypeID,  
-       --COALESCE(a.CartCountNum, 0) as CartCountNum --Old PS field,
+       a.BinGoLiveDate,
        a.OrderNum,
        a.LineNum,
-	   case when a.OrderType = 'MSR' or a.OrderType = 'Pick' then 'I'
-			else 'N' end as ItemType,
-	   a.OrderUOM,
+       a.ItemType,
+       a.OrderUOM,
        Cast(a.OrderQty AS INT) AS OrderQty,
        a.OrderDate,
-       case when a.CloseDate < '1900-01-01' then NULL else a.CloseDate end as OrderCloseDate,
+       case when (a.OrderCancelDate is not null and a.ItemType <> 'I') or (a.OrderCancelDate is not null and a.ItemType = 'I') then a.OrderCancelDate else a.OrderCloseDate end as OrderCloseDate,
        b.OrderDate             AS PrevOrderDate,
-       case when b.CloseDate < '1900-01-01' then NULL else b.CloseDate end AS PrevOrderCloseDate,
-	   1 as Scan,
+       case when b.OrderCancelDate is not null  and a.ItemType <> 'I' then b.OrderCancelDate else b.OrderCloseDate end AS PrevOrderCloseDate,
+       1                       AS Scan,
        CASE
-         WHEN Datediff(Day, b.OrderDate, a.OrderDate) < COALESCE(db.BinLeadTime,@DefaultLT,3) THEN 1
+         WHEN Datediff(Day, b.OrderDate, a.OrderDate) < COALESCE(a.BinLeadTime,@DefaultLT,3) THEN 1
          ELSE 0
        END                     AS HotScan,
        CASE
-         WHEN a.OrderDate < COALESCE(b.CloseDate, Getdate())
+         WHEN a.OrderDate < COALESCE(b.OrderCloseDate, b.OrderCancelDate, Getdate())
               AND a.ScanHistseq > (select ConfigValue + 1 from bluebin.Config where ConfigName = 'ScanThreshold') THEN 1 --When looking for stockouts you have to take the scanseq 2 after the ignored one
          ELSE 0
        END                     AS StockOut
-
-into bluebin.FactScan
-FROM   Scans a
-       INNER JOIN bluebin.DimBin db on a.BinKey = db.BinKey
-	   LEFT JOIN Scans b
+INTO   bluebin.FactScan
+FROM   #tmpScan a
+       LEFT JOIN #tmpScan b
               ON a.BinKey = b.BinKey
                  AND a.Scanseq = b.Scanseq - 1
        LEFT JOIN bluebin.DimLocation c
-              ON a.LocationID = c.LocationID
+              ON a.LocationID = c.LocationID	
+			  AND a.OrderFacility = c.LocationFacility		
        LEFT JOIN bluebin.DimItem d
-              ON a.ItemID = d.ItemID
-	   
-WHERE  a.OrderDate >= db.BinGoLiveDate and a.OrderUOM <> '0' and a.OrderQty <> '0'--and a.OrderDate > getdate() -360--and d.ItemKey = '18710' and 
---and a.OrderNum = '0000383593'
-Order by BinKey,ScanHistseq asc
+              ON a.ItemID = d.ItemID 
+--where a.OrderNum like '%1109153%'
+order by a.BinKey,a.OrderDate
+/*****************************************		DROP Temp Tables		*******************************/
+
+DROP TABLE #REQLINE
+DROP TABLE #ICTRANS
+DROP TABLE #POLINE
+DROP TABLE #tmpScan
+DROP TABLE #CancelledLines
 
 
 
@@ -1158,7 +1705,6 @@ UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'FactScan'
 
-GO
 
 /*************************************************
 
@@ -1173,7 +1719,7 @@ IF EXISTS ( SELECT  *
 
 DROP PROCEDURE  etl_FactBinSnapshot
 GO
---exec etl_FactBinSnapshot
+
 
 CREATE PROCEDURE  etl_FactBinSnapshot
 
@@ -1322,7 +1868,7 @@ IF EXISTS ( SELECT  *
 
 DROP PROCEDURE  etl_FactIssue
 GO
-
+--exec etl_FactIssue
 CREATE PROCEDURE etl_FactIssue
 
 AS
@@ -1335,44 +1881,49 @@ AS
  END CATCH
 
  /*******************************	CREATE FactIssue	*********************************/
-  declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
-  
 
-  
-  SELECT 
 
-		case when @Facility is not null or @Facility <> '' then @Facility else '' end as FacilityKey,
-		Picks.BUSINESS_UNIT AS LocationID,
-       b.LocationKey AS LocationKey,
-       c.LocationKey AS ShipLocationKey,
-       case when @Facility is not null or @Facility <> '' then @Facility else '' end as ShipFacilityKey,
-       ISNULL(c.BlueBinFlag,0) as BlueBinFlag,
-	   d.ItemKey AS ItemKey,
-       '' AS  SourceSystem,
-       Picks.ORDER_NO AS ReqNumber,
-       Picks.ORDER_INT_LINE_NO AS ReqLineNumber,
-       Picks.SCHED_DTTM AS IssueDate,
-       Picks.UNIT_OF_MEASURE AS UOM,
-       '' AS UOMMult,
-       Picks.QTY_PICKED AS  IssueQty,
-       case when PICK_BATCH_ID = 0 then 1 else 0 end AS StatCall,
-       1  AS IssueCount
+ SELECT 
+		a.COMPANY                                                                                AS FacilityKey,
+       a.LOCATION as LocationID,
+	   b.LocationKey,
+	   c.LocationKey                                                                          AS ShipLocationKey,
+       c.LocationFacility                                                                     AS ShipFacilityKey,
+       c.BlueBinFlag,
+	   d.ItemKey,
+       SYSTEM_CD as SourceSystem,
+       CASE
+         WHEN SYSTEM_CD = 'RQ' THEN DOCUMENT
+         ELSE ''
+       END                                                                                    AS ReqNumber,
+       CASE
+         WHEN SYSTEM_CD = 'RQ' THEN LINE_NBR
+         ELSE ''
+       END                                                                                    AS ReqLineNumber,
+       Cast(CONVERT(VARCHAR, TRANS_DATE, 101) + ' '
+            + LEFT(RIGHT('00000' + CONVERT(VARCHAR, ACTUAL_TIME), 4), 2)
+            + ':'
+            + Substring(RIGHT('00000' + CONVERT(VARCHAR, ACTUAL_TIME), 4), 3, 2) AS DATETIME) AS IssueDate,
+       TRAN_UOM as UOM,
+       TRAN_UOM_MULT as UOMMult,
+       -QUANTITY                                                                              AS IssueQty,
+       CASE
+         WHEN SYSTEM_CD = 'IC' THEN 1
+         ELSE 0
+       END                                                                                    AS StatCall,
+       1                                                                                      AS IssueCount
 INTO bluebin.FactIssue
-FROM   dbo.IN_DEMAND Picks
-	  LEFT JOIN bluebin.DimLocation b
-               ON Picks.BUSINESS_UNIT = b.LocationID
-                  AND @Facility = b.LocationFacility
+FROM   ICTRANS a
+       LEFT JOIN bluebin.DimLocation b
+               ON a.LOCATION = b.LocationID
+                  AND a.COMPANY = b.LocationFacility
        LEFT JOIN bluebin.DimLocation c
-               ON Picks.LOCATION = c.LocationID
-                  AND @Facility = c.LocationFacility
+               ON a.FROM_TO_LOC = c.LocationID
+                  AND a.FROM_TO_CMPY = c.LocationFacility
        LEFT JOIN bluebin.DimItem d
-               ON Picks.INV_ITEM_ID = d.ItemID
+               ON a.ITEM = d.ItemID
+WHERE  DOC_TYPE = 'IS'  and a.DOCUMENT not like '%[A-Z]%' 
 
-WHERE  
-CANCEL_DTTM IS NULL or CANCEL_DTTM < '1900-01-02'
-
-	
 GO
 
 UPDATE etl.JobSteps
@@ -1381,11 +1932,11 @@ WHERE StepName = 'FactIssue'
 
 GO
 
-/*********************************************************************
+/****************************************************************
 
-		FactWarehouseSnapshot
+			FactWarehouseSnapshot
 
-*********************************************************************/
+****************************************************************/
 
 
 IF EXISTS ( SELECT  *
@@ -1413,95 +1964,82 @@ AS
 ;
 
 	
---select 
---	LOCATION,
---	ITEM,
---       SOH_QTY       AS SOHQty,
---	   LAST_ISS_COST	AS UnitCost,
---	   convert(DATE,getdate()) as MonthEnd
---into TempA# 
---from ITEMLOC 
---where 
---	LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
---	and SOH_QTY > 0 
---	OR 
---	LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') and 
---	ITEM in (select distinct ITEM from ICTRANS where LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION'))
---	--AND ITEM in ('0000013','0000018')
+select 
+	LOCATION,
+	ITEM,
+       SOH_QTY       AS SOHQty,
+	   LAST_ISS_COST	AS UnitCost,
+	   convert(DATE,getdate()) as MonthEnd
+into TempA# 
+from ITEMLOC 
+where 
+	LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+	and SOH_QTY > 0 
+	OR 
+	LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') and 
+	ITEM in (select distinct ITEM from ICTRANS where LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION'))
+	--AND ITEM in ('0000013','0000018')
 
 
---    SELECT 
---		Row_number()
---             OVER(
---               PARTITION BY a.ITEM
---               ORDER BY a.MonthEnd DESC) as [Sequence],
---		a.MonthEnd,
---		a.ITEM,
---		case when a.MonthEnd = convert(DATE,getdate()) then TempA#.SOHQty else (ISNULL(b.QUANTITY,0)*-1) end as QUANTITY,
---		(ISNULL(c.QUANTITY,0)*-1) as QUANTITYIN
+    SELECT 
+		Row_number()
+             OVER(
+               PARTITION BY a.ITEM
+               ORDER BY a.MonthEnd DESC) as [Sequence],
+		a.MonthEnd,
+		a.ITEM,
+		case when a.MonthEnd = convert(DATE,getdate()) then TempA#.SOHQty else (ISNULL(b.QUANTITY,0)*-1) end as QUANTITY,
+		(ISNULL(c.QUANTITY,0)*-1) as QUANTITYIN
 
---    into TempB#
---	FROM   
---	(SELECT DISTINCT 
---		case when left(Date,11) = left(getdate(),11) then Date else Eomonth(Date) end AS MonthEnd,
---		ITEM
---		FROM   bluebin.DimDate,TempA#) a
---		LEFT JOIN
---		(select 
---			ITEM,
---			EOMONTH(DATEADD(MONTH, -1, TRANS_DATE)) as MonthEnd,
---			SUM((QUANTITY)) as QUANTITY 
---			FROM   ICTRANS 
---			where 
---				LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
---			group by ITEM,
---			EOMONTH(DATEADD(MONTH, -1, TRANS_DATE))) b on a.MonthEnd = b.MonthEnd and a.ITEM = b.ITEM 
---		LEFT JOIN
---		(select 
---			ITEM,
---			EOMONTH(DATEADD(MONTH, -1, REC_ACT_DATE)) as MonthEnd,
---			SUM((REC_QTY*EBUY_UOM_MULT)) as QUANTITY 
---			FROM   POLINE 
---			where 
---				LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
---				and CXL_QTY = 0 and REC_QTY > 0 and ITEM_TYPE = 'I'
---			group by ITEM,
---			EOMONTH(DATEADD(MONTH, -1, REC_ACT_DATE))) c on a.MonthEnd = c.MonthEnd and a.ITEM = c.ITEM 
---		left join TempA# on a.MonthEnd = TempA#.MonthEnd and a.ITEM = TempA#.ITEM
---    WHERE  a.MonthEnd <= Getdate() 
+    into TempB#
+	FROM   
+	(SELECT DISTINCT 
+		case when left(Date,11) = left(getdate(),11) then Date else Eomonth(Date) end AS MonthEnd,
+		ITEM
+		FROM   bluebin.DimDate,TempA#) a
+		LEFT JOIN
+		(select 
+			ITEM,
+			EOMONTH(DATEADD(MONTH, -1, TRANS_DATE)) as MonthEnd,
+			SUM((QUANTITY)) as QUANTITY 
+			FROM   ICTRANS 
+			where 
+				LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+			group by ITEM,
+			EOMONTH(DATEADD(MONTH, -1, TRANS_DATE))) b on a.MonthEnd = b.MonthEnd and a.ITEM = b.ITEM 
+		LEFT JOIN
+		(select 
+			ITEM,
+			EOMONTH(DATEADD(MONTH, -1, REC_ACT_DATE)) as MonthEnd,
+			SUM((REC_QTY*EBUY_UOM_MULT)) as QUANTITY 
+			FROM   POLINE 
+			where 
+				LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+				and CXL_QTY = 0 and REC_QTY > 0 and ITEM_TYPE = 'I'
+			group by ITEM,
+			EOMONTH(DATEADD(MONTH, -1, REC_ACT_DATE))) c on a.MonthEnd = c.MonthEnd and a.ITEM = c.ITEM 
+		left join TempA# on a.MonthEnd = TempA#.MonthEnd and a.ITEM = TempA#.ITEM
+    WHERE  a.MonthEnd <= Getdate() 
 
-
-
---select 
---ic.COMPANY AS FacilityKey,
---df.FacilityName,
---ic.LOCATION as LocationID,
---TempB#.MonthEnd as SnapshotDate,
---TempB#.ITEM,
---SUM(TempB#.QUANTITY+TempB#.QUANTITYIN) OVER (PARTITION BY TempB#.ITEM ORDER BY TempB#.[Sequence]) as SOH,
---ic.LAST_ISS_COST  AS UnitCost  
-----,SUM(TempB#.QUANTITY+TempB#.QUANTITYIN) OVER (PARTITION BY TempB#.ITEM ORDER BY TempB#.[Sequence])*ic.LAST_ISS_COST as B
---into bluebin.FactWarehouseSnapshot
---from TempB# 
---inner join ITEMLOC ic on TempB#.ITEM = ic.ITEM
---inner join bluebin.DimFacility df on ic.COMPANY = df.FacilityID
---where ic.LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
-
---drop table TempA#
---drop table TempB#
 
 
 select 
-'' AS FacilityKey,
-'' AS FacilityName,
-'' AS LocationID,
-'' AS SnapshotDate,
-'' AS ITEM,
-'' AS SOH,
-'' AS UnitCost  
+ic.COMPANY AS FacilityKey,
+df.FacilityName,
+ic.LOCATION as LocationID,
+TempB#.MonthEnd as SnapshotDate,
+TempB#.ITEM,
+SUM(TempB#.QUANTITY+TempB#.QUANTITYIN) OVER (PARTITION BY TempB#.ITEM ORDER BY TempB#.[Sequence]) as SOH,
+ic.LAST_ISS_COST  AS UnitCost  
 --,SUM(TempB#.QUANTITY+TempB#.QUANTITYIN) OVER (PARTITION BY TempB#.ITEM ORDER BY TempB#.[Sequence])*ic.LAST_ISS_COST as B
 into bluebin.FactWarehouseSnapshot
+from TempB# 
+inner join ITEMLOC ic on TempB#.ITEM = ic.ITEM
+inner join bluebin.DimFacility df on ic.COMPANY = df.FacilityID
+where ic.LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
 
+drop table TempA#
+drop table TempB#
 
 /*********************	END		******************************/
 
@@ -1512,6 +2050,7 @@ SET LastModifiedDate = GETDATE()
 WHERE StepName = 'FactWarehouseSnapshot'
 
 GO
+
 
 /***************************************************************************
 
@@ -1537,10 +2076,11 @@ END TRY
 
 BEGIN CATCH
 END CATCH
-Declare @UseClinicalDescTab int
+Declare @UseClinicalDescTab int 
 /*This setting will use the Brand Name (Peoplsoft) or the set name in ITEM LOC User Fields (Lawson) 
 instead of the standard that is populated through ItemClinicalDescription all write it over ItemDescription in ALL Tableau reports*/
 select @UseClinicalDescTab = ConfigValue from bluebin.Config where ConfigName = 'UseClinicalDescTab'
+
 
 
 
@@ -1623,11 +2163,237 @@ GO
 
 
 
-/*****************************************************************************
+
+/***************************************************************************
 
 			Sourcing
 
-*****************************************************************************/
+***************************************************************************/
+
+IF EXISTS ( SELECT  *
+            FROM    sys.objects
+            WHERE   object_id = OBJECT_ID(N'tb_Sourcing')
+                    AND type IN ( N'P', N'PC' ) ) 
+
+DROP PROCEDURE  tb_Sourcing
+GO
+
+CREATE PROCEDURE tb_Sourcing 
+--exec tb_Sourcing  select * from tableau.Sourcing where PODate >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE')
+AS
+
+/********************************		DROP Sourcing		**********************************/
+
+BEGIN TRY
+    DROP TABLE tableau.Sourcing
+END TRY
+
+BEGIN CATCH
+END CATCH
+
+/**********************************		CREATE Temp Tables		***************************/
+
+-- #tmpPOLines
+
+SELECT a.COMPANY,
+       a.PO_NUMBER,
+       a.PO_RELEASE,
+       a.PO_CODE,
+       a.LINE_NBR,
+       a.ITEM,
+       a.ITEM_TYPE,
+       a.DESCRIPTION AS PO_DESCRIPTION,
+       a.QUANTITY,
+       a.REC_QTY,
+       a.AGREEMENT_REF,
+       a.ENT_UNIT_CST,
+       a.ENT_BUY_UOM,
+       case when a.EBUY_UOM_MULT < 1 then 1 else a.EBUY_UOM_MULT end as EBUY_UOM_MULT,
+       b.PO_DATE,
+       a.EARLY_DL_DATE,
+       a.LATE_DL_DATE,
+       a.REC_ACT_DATE,
+       a.CLOSE_DATE,
+       a.LOCATION,
+       a.BUYER_CODE,
+       a.VENDOR,
+       d.OPER_COMPANY,
+	   d.REQ_LOCATION,
+       a.VEN_ITEM,
+       a.CLOSED_FL,
+       a.CXL_QTY,
+       c.INVOICE_AMT,
+	   dt.DELIVER_TO
+INTO   #tmpPOLines
+FROM   POLINE a
+       INNER JOIN PURCHORDER b
+              ON a.PO_NUMBER = b.PO_NUMBER
+                 AND a.COMPANY = b.COMPANY
+                 AND a.PO_CODE = b.PO_CODE
+				 AND a.PO_RELEASE = b.PO_RELEASE
+       LEFT JOIN (SELECT PO_NUMBER,
+                         LINE_NBR,
+                         Sum(TOT_DIST_AMT) AS INVOICE_AMT
+                  FROM   MAINVDTL
+                  GROUP  BY PO_NUMBER,
+                            LINE_NBR) c
+              ON a.PO_NUMBER = c.PO_NUMBER
+                 AND a.LINE_NBR = c.LINE_NBR
+       LEFT JOIN POLINESRC d
+              ON a.COMPANY = d.COMPANY
+                 AND a.PO_NUMBER = d.PO_NUMBER
+                 AND a.LINE_NBR = d.LINE_NBR
+                 AND a.PO_CODE = d.PO_CODE
+				 AND a.PO_RELEASE = d.PO_RELEASE
+		left join (select distinct pls.PO_NUMBER,rh.DELIVER_TO from REQHEADER rh INNER JOIN POLINESRC pls on rh.REQ_NUMBER = pls.SOURCE_DOC_N) dt
+			ON a.PO_NUMBER = dt.PO_NUMBER
+WHERE  b.PO_DATE >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE') 
+		--AND b.PO_RELEASE = 0
+       AND a.CXL_QTY = 0
+	   
+	   --and a.PO_NUMBER like '%593273%'
+
+
+--#tmpMMDIST
+SELECT a.DOC_NUMBER    AS PO_NUMBER,
+       a.LINE_NBR,
+       a.ACCT_UNIT,
+       b.DESCRIPTION AS ACCT_UNIT_NAME
+INTO #tmpMMDIST
+FROM   MMDIST a
+inner join (select COMPANY,DOC_NUMBER,LINE_NBR,max(LINE_SEQ) as LINE_SEQ from MMDIST WHERE  SYSTEM_CD = 'PO' AND DOC_TYPE = 'PT' group by COMPANY,DOC_NUMBER,LINE_NBR) sq on a.COMPANY = sq.COMPANY and a.DOC_NUMBER = sq.DOC_NUMBER and a.LINE_NBR = sq.LINE_NBR and a.LINE_SEQ = sq.LINE_SEQ
+       LEFT JOIN 
+		(select COMPANY,ACCT_UNIT,DESCRIPTION,ACTIVE_STATUS from GLNAMES group by COMPANY,ACCT_UNIT,DESCRIPTION,ACTIVE_STATUS) b
+              ON a.COMPANY = b.COMPANY
+                 AND a.ACCT_UNIT = b.ACCT_UNIT
+WHERE  SYSTEM_CD = 'PO'
+       AND DOC_TYPE = 'PT'
+       AND a.DOC_NUMBER IN (SELECT PO_NUMBER
+                          FROM   PURCHORDER
+                          WHERE  PO_DATE >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE'))
+						  --and a.DOC_NUMBER like '%643587%'
+						  --and a.DOC_NUMBER like '%389266%' order by 2
+
+
+--#tmpPOStatus
+SELECT Row_number()
+         OVER(
+           ORDER BY a.PO_NUMBER, a.LINE_NBR) AS POKey,
+       COMPANY                           AS Company,
+       a.PO_NUMBER                         AS PONumber,
+       a.LINE_NBR                          AS POLineNumber,
+       PO_RELEASE                        AS PORelease,
+       PO_CODE                           AS POCode,
+       ITEM                              AS ItemNumber,
+	   a.VENDOR                            AS VendorCode,
+	   d.VENDOR_VNAME					AS VendorName,
+       a.BUYER_CODE                        AS Buyer,
+	   c.NAME							AS BuyerName,
+       LOCATION                          AS ShipLocation,
+       ACCT_UNIT                         AS AcctUnit,
+       ACCT_UNIT_NAME                    AS AcctUnitName,
+       PO_DESCRIPTION                    AS PODescr,
+       QUANTITY                          AS QtyOrdered,
+       REC_QTY                           AS QtyReceived,
+       AGREEMENT_REF                     AS AgrmtRef,
+       ENT_UNIT_CST                      AS UnitCost,
+       ENT_BUY_UOM                       AS BuyUOM,
+       EBUY_UOM_MULT                     AS BuyUOMMult,
+	   ENT_UNIT_CST/EBUY_UOM_MULT		 AS IndividualCost,
+       PO_DATE                           AS PODate,
+       EARLY_DL_DATE                     AS ExpectedDeliveryDate,
+       LATE_DL_DATE                      AS LateDeliveryDate,
+       REC_ACT_DATE                      AS ReceivedDate,
+       CLOSE_DATE                        AS CloseDate,
+       REQ_LOCATION                      AS PurchaseLocation,
+       OPER_COMPANY                      AS PurchaseFacility,
+	   VEN_ITEM                          AS VendorItemNbr,
+       CLOSED_FL                         AS ClosedFlag,
+       CXL_QTY                           AS QtyCancelled,
+       QUANTITY * ENT_UNIT_CST           AS POAmt,
+       INVOICE_AMT                       AS InvoiceAmt,
+	   DELIVER_TO						 AS DeliverToNew,
+       ITEM_TYPE                         AS POItemType,
+       CASE
+         WHEN ITEM_TYPE = 'S' THEN 0
+         ELSE
+           CASE
+             WHEN REC_QTY = 0 THEN 0
+             ELSE INVOICE_AMT - ( REC_QTY * ENT_UNIT_CST )
+           END
+       END                               AS PPV,
+       1                                 AS POLine
+INTO #tmpPOStatus
+FROM   #tmpPOLines a
+       LEFT JOIN #tmpMMDist b
+              ON a.PO_NUMBER = b.PO_NUMBER
+                 AND a.LINE_NBR = b.LINE_NBR 
+		LEFT JOIN (select distinct BUYER_CODE,NAME from BUYER) c
+		ON a.BUYER_CODE = c.BUYER_CODE
+		LEFT JOIN APVENMAST d ON a.VENDOR = d.VENDOR
+
+
+--#tmpPOs
+
+SELECT *,
+CASE WHEN ClosedFlag = 'Y' THEN 'Closed' ELSE
+	CASE WHEN QtyReceived + QtyCancelled >= QtyOrdered THEN 'Closed' ELSE 'Open' END
+	END 																as POStatus,
+CASE WHEN POItemType = 'S' THEN 'N/A' ELSE
+	CASE WHEN Dateadd(day, 3, ExpectedDeliveryDate) <= GETDATE() AND (QtyReceived+QtyCancelled < QtyOrdered) THEN 'Late' ELSE
+		CASE WHEN Dateadd(day, 3, ExpectedDeliveryDate) > GETDATE() THEN 'In-Progress' ELSE
+			CASE WHEN ReceivedDate <= Dateadd(day, 3, ExpectedDeliveryDate) AND (QtyReceived + QtyCancelled) >= QtyOrdered THEN 'On-Time' ELSE 'Late' END
+		END	
+	
+	END
+
+END as PODeliveryStatus
+INTO #tmpPOs
+FROM #tmpPOStatus
+
+
+/*************************		CREATE Sourcing		****************************/
+
+SELECT a.*,
+       CASE
+         WHEN a.PODeliveryStatus = 'In-Progress' THEN 1
+         ELSE 0
+       END AS InProgress,
+       CASE
+         WHEN a.PODeliveryStatus = 'On-Time' THEN 1
+         ELSE 0
+       END AS OnTime,
+       CASE
+         WHEN a.PODeliveryStatus = 'Late' THEN 1
+         ELSE 0
+       END AS Late,
+	   case when dl.BlueBinFlag = 1 then 'Yes' else 'No' end as BlueBinFlag,
+	   df.FacilityName,
+	   dl.LocationName
+
+INTO   tableau.Sourcing 
+FROM   #tmpPOs a
+LEFT JOIN bluebin.DimLocation dl on ltrim(rtrim(a.PurchaseLocation)) = ltrim(rtrim(dl.LocationID)) and ltrim(rtrim(a.PurchaseFacility)) = ltrim(rtrim(dl.LocationFacility))
+LEFT JOIN bluebin.DimFacility df on ltrim(rtrim(a.PurchaseFacility)) = ltrim(rtrim(df.FacilityID))
+/***********************		DROP Temp Tables	**************************/
+
+DROP TABLE #tmpPOLines
+DROP TABLE #tmpMMDIST
+DROP TABLE #tmpPOStatus
+DROP TABLE #tmpPOs
+
+GO
+
+UPDATE etl.JobSteps
+SET LastModifiedDate = GETDATE()
+WHERE StepName = 'Sourcing'
+
+GO
+grant exec on tb_Sourcing to public
+GO
+
+
+
 
 
 
@@ -1642,8 +2408,59 @@ GO
 *******************************************************************************/
 
 
+IF EXISTS ( SELECT  *
+            FROM    sys.objects
+            WHERE   object_id = OBJECT_ID(N'tb_Contracts')
+                    AND type IN ( N'P', N'PC' ) ) 
+
+DROP PROCEDURE  tb_Contracts
+GO
+
+CREATE PROCEDURE tb_Contracts
+
+AS
+
+BEGIN TRY
+    DROP TABLE tableau.Contracts
+END TRY
+
+BEGIN CATCH
+END CATCH
+
+SELECT Date,
+       VEN_AGRMT_REF AS ContractID,
+       AGMT_TYPE     AS ContractType,
+       a.VENDOR        AS VendorNumber,
+	   b.VENDOR_VNAME	AS VendorName,
+       a.ITEM          AS ItemNumber,
+	   c.DESCRIPTION	AS ItemDescription,
+       VEN_ITEM      AS VendorItemNumber,
+       CURR_NET_CST  AS CurrentCost,
+       UOM,
+       UOM_MULT      AS UOMMult,
+       PRIORITY      AS Priority,
+       HOLD_FLAG     AS HoldFlag,
+       EFFECTIVE_DT  AS EffectiveDate,
+       EXPIRE_DT     AS ExpireDate
+INTO   tableau.Contracts
+FROM   bluebin.DimDate
+       LEFT JOIN POVAGRMTLN a
+              ON EXPIRE_DT = Date 
+		LEFT JOIN APVENMAST b ON a.VENDOR = b.VENDOR
+		LEFT JOIN ITEMMAST c ON a.ITEM = c.ITEM
+		select EFFECTIVE_DT,count(*) from POVAGRMTLN group by EFFECTIVE_DT
+GO
+
+UPDATE etl.JobSteps
+SET LastModifiedDate = GETDATE()
+WHERE StepName = 'Contracts'
 
 
+
+GO
+
+grant exec on tb_Contracts to public
+GO
 
 /***********************************************************************
 
@@ -1795,12 +2612,6 @@ END
 
 GO
 
-/************************************************************
-
-			DimWarehouseItem
-
-************************************************************/
-
 IF EXISTS ( SELECT  *
             FROM    sys.objects
             WHERE   object_id = OBJECT_ID(N'etl_DimWarehouseItem')
@@ -1822,17 +2633,14 @@ END TRY
 BEGIN CATCH
 END CATCH
 
-declare @Facility int, @UsePriceList int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
-   select @UsePriceList = ConfigValue from bluebin.Config where ConfigName = 'PS_UsePriceList'
-   
+
 
 SELECT 
 		--d.LocationID,
-		case when @Facility is not null or @Facility <> '' then @Facility else ''end as FacilityID,
-		case when @Facility is not null or @Facility <> '' then (select FacilityName from bluebin.DimFacility where FacilityID = @Facility) else ''end as FacilityName,
-		a.BUSINESS_UNIT as LocationID,
-		a.BUSINESS_UNIT as LocationName,
+		a.COMPANY,
+		df.FacilityName,
+		a.LOCATION as LocationID,
+		a.LOCATION as LocationName,
 		b.ItemKey,
        b.ItemID,
        b.ItemDescription,
@@ -1841,24 +2649,19 @@ SELECT
        b.ItemManufacturerNumber,
        b.ItemVendor,
        b.ItemVendorNumber,
-       ''    AS StockLocation,
-       a.[QTY_ONHAND]       AS SOHQty,
-       a.[QTY_MAXIMUM]     AS ReorderQty,
-       a.[REORDER_POINT] AS ReorderPoint,
-	   a.[LAST_PRICE_PAID] as UnitCost,
-	   --CASE 		--Use if PriceList should be part of the Warehouse report as well  Uncomment left join to PURCHITEM_ATTR if activating
-		--WHEN @UsePriceList = 1 then p.PRICE_LIST
-		--else a.[LAST_PRICE_PAID]	
-		--End AS UnitCost,
+       a.PREFER_BIN    AS StockLocation,
+       a.SOH_QTY       AS SOHQty,
+       a.MAX_ORDER     AS ReorderQty,
+       a.REORDER_POINT AS ReorderPoint,
+	   a.LAST_ISS_COST	AS UnitCost,
        b.StockUOM,
        b.BuyUOM,
        b.PackageString
 INTO   bluebin.DimWarehouseItem
-FROM   [dbo].[BU_ITEMS_INV] a
+FROM   ITEMLOC a
        INNER JOIN bluebin.DimItem b
-               ON a.[INV_ITEM_ID] = b.ItemID
-		--LEFT JOIN [dbo].PURCH_ITEM_ATTR p on a.INV_ITEM_ID = p.INV_ITEM_ID
-		
+               ON a.ITEM = b.ItemID
+		INNER JOIN bluebin.DimFacility df on a.COMPANY = df.FacilityID
        --INNER JOIN ICCATEGORY c
        --        ON a.COMPANY = c.COMPANY
        --           AND a.LOCATION = c.LOCATION
@@ -1870,8 +2673,8 @@ FROM   [dbo].[BU_ITEMS_INV] a
 		--ON a.COMPANY = e.COMPANY
 		--AND a.LOCATION = e.LOCATION
 
---WHERE a.BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
-WHERE a.BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
+WHERE a.LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+
 
 GO
 
@@ -1883,6 +2686,9 @@ GO
 
 
 
+
+Print 'ETL Sprocs updated'
+GO
 
 /********************************************************************
 
@@ -1898,12 +2704,10 @@ IF EXISTS ( SELECT  *
 DROP PROCEDURE  etl_DimFacility
 GO
 
---drop table bluebin.DimFacility
---delete from bluebin.DimFacility where FacilityID = 2
---select * from bluebin.DimFacility  
---exec etl_DimFacility
+
 CREATE PROCEDURE etl_DimFacility
 AS
+
 
 
 /*********************		POPULATE/update DimFacility	****************************/
@@ -1914,26 +2718,45 @@ CREATE TABLE [bluebin].[DimFacility](
 	[FacilityName] varchar (50) NOT NULL
 )
 ;
-declare @DefaultFacility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
 
-if exists (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility' and ConfigValue > 0)
-BEGIN
 INSERT INTO bluebin.DimFacility 
---declare @DefaultFacility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
+	SELECT
+	COMPANY as FacilityID,
+	NAME as FacilityName
 
-select @DefaultFacility,a.SETID
-from
-	(select distinct SETID from LOCATION_TBL) a
-	where @DefaultFacility not in (select FacilityID from bluebin.DimFacility)
+    FROM   dbo.APCOMPANY a
+	left join bluebin.DimFacility df on a.COMPANY = df.FacilityID 
+	where df.FacilityID is null
 	
 END 
-END
-GO
+;
+
+    INSERT INTO bluebin.DimFacility 
+	SELECT
+	COMPANY as FacilityID,
+	NAME as FacilityName
+
+    FROM   dbo.APCOMPANY a
+	left join bluebin.DimFacility df on a.COMPANY = df.FacilityID 
+	where df.FacilityID is null
+;
+update bluebin.DimFacility set FacilityName = a.fn from
+(select COMPANY as fi,NAME as fn from APCOMPANY) as a
+where FacilityID = a.fi and FacilityName <> a.fn
+;
 
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimFacility'
 GO
+
+
+
+/********************************************************************
+
+					Warehouse History
+
+********************************************************************/
 
 
 
@@ -2137,13 +2960,132 @@ SET LastModifiedDate = GETDATE()
 WHERE StepName = 'BlueBinParMaster'
 GO
 
-Print 'ETL Sprocs updated'
+
+
+
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_CostVariance') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_CostVariance
 GO
 
+--exec tb_CostVariance
+
+CREATE PROCEDURE tb_CostVariance
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
 
 
 
+SELECT f.ITEM,
+       f.DESCRIPTION,
+       Min(e.PO_DATE)   AS EFF_DATE,
+       Max(e.PO_DATE)   AS EXP_DATE,
+       Sum(c.QUANTITY)  AS QUANTITY,
+       c.ENT_BUY_UOM    AS UOM,
+       (d.MATCH_UNIT_CST/case when c.EBUY_UOM_MULT < 1 then 1 else c.EBUY_UOM_MULT end) AS UNIT_COST,
+       h.ISS_ACCOUNT
+INTO   #PriceHist
+FROM   POLINE c
+       INNER JOIN MAINVDTL d
+               ON c.COMPANY = d.COMPANY
+                  AND c.PO_NUMBER = d.PO_NUMBER
+                  AND c.LINE_NBR = d.LINE_NBR
+                  AND c.PO_CODE = d.PO_CODE
+       INNER JOIN PURCHORDER e
+               ON c.PO_NUMBER = e.PO_NUMBER
+       INNER JOIN ITEMMAST f
+               ON c.ITEM = f.ITEM
+       LEFT JOIN (SELECT *
+                  FROM   ITEMLOC
+                  WHERE  LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')) g
+              ON c.ITEM = g.ITEM
+       LEFT JOIN ICCATEGORY h
+              ON g.COMPANY = h.COMPANY
+                 AND g.LOCATION = h.LOCATION
+                 AND g.GL_CATEGORY = h.GL_CATEGORY
+WHERE  c.ITEM_TYPE IN ( 'I', 'N' )
+       AND CXL_QTY = 0
+       AND Year(PO_DATE) >= Year(Getdate()) - 1
+GROUP  BY f.ITEM,
+          f.DESCRIPTION,
+          c.ENT_BUY_UOM,
+		  case when c.EBUY_UOM_MULT < 1 then 1 else c.EBUY_UOM_MULT end,
+          d.MATCH_UNIT_CST,
+          h.ISS_ACCOUNT
 
+SELECT Row_number()
+         OVER(
+           PARTITION BY ITEM, UOM
+           ORDER BY QUANTITY DESC) AS PriceSeq,
+       ITEM,
+       DESCRIPTION,
+       EFF_DATE,
+	   EXP_DATE,
+       QUANTITY,
+       UOM,
+       UNIT_COST,
+	   ISS_ACCOUNT
+INTO   #PriceSeq
+FROM   #PriceHist
+
+SELECT *
+INTO   #ModePrice
+FROM   #PriceSeq
+WHERE  PriceSeq = 1
+
+SELECT c.PO_NUMBER,
+       c.LINE_NBR,
+       c.ITEM,
+       c.DESCRIPTION,
+       c.ITEM_TYPE,
+       e.PO_DATE,
+       c.QUANTITY,
+       c.ENT_BUY_UOM,
+       (c.ENT_UNIT_CST/case when c.EBUY_UOM_MULT < 1 then 1 else c.EBUY_UOM_MULT end)	as ENT_UNIT_CST,
+       (d.MATCH_UNIT_CST/case when c.EBUY_UOM_MULT < 1 then 1 else c.EBUY_UOM_MULT end) as MATCH_UNIT_CST
+INTO   #POHistory
+FROM   POLINE c
+       INNER JOIN MAINVDTL d
+               ON c.COMPANY = d.COMPANY
+                  AND c.PO_NUMBER = d.PO_NUMBER
+                  AND c.LINE_NBR = d.LINE_NBR
+                  AND c.PO_CODE = d.PO_CODE
+       INNER JOIN PURCHORDER e
+               ON c.PO_NUMBER = e.PO_NUMBER
+       INNER JOIN ITEMMAST f
+               ON c.ITEM = f.ITEM
+WHERE  c.ITEM_TYPE IN ( 'I', 'N' )
+       AND CXL_QTY = 0
+       AND Year(PO_DATE) >= Year(Getdate()) - 1
+
+SELECT a.*,
+       b.UNIT_COST                                AS ModePrice,
+       a.QUANTITY * ( a.UNIT_COST - b.UNIT_COST ) AS Variance
+FROM   #PriceSeq a
+       INNER JOIN #ModePrice b
+               ON a.ITEM = b.ITEM
+                  AND a.UOM = b.UOM
+       LEFT JOIN #POHistory c
+              ON a.ITEM = c.ITEM
+                 AND a.UOM = c.ENT_BUY_UOM
+                 AND a.UNIT_COST = c.MATCH_UNIT_CST
+                 AND a.EFF_DATE <= c.PO_DATE
+                 AND a.EXP_DATE >= c.PO_DATE 
+ORDER by 2, 1
+END
+GO
+grant exec on tb_CostVariance to public
+GO
+--DROP TABLE #PriceHist
+--DROP TABLE #PriceSeq
+--DROP TABLE #ModePrice
+--DROP TABLE #POHistory
 
 
 --*********************************************************************************************
@@ -2163,45 +3105,42 @@ AS
 BEGIN
 SET NOCOUNT ON
 
---SELECT FISCAL_YEAR                                                                                                                                                                                                  AS FiscalYear,
---       ACCT_PERIOD                                                                                                                                                                                                  AS AcctPeriod,
---       a.COMPANY,
---	   df.FacilityName,
---	   a.ACCOUNT                                                                                                                                                                                                    AS Account,
---       b.ACCOUNT_DESC                                                                                                                                                                                               AS AccountDesc,
---       a.ACCT_UNIT                                                                                                                                                                                                  AS AcctUnit,
---       c.DESCRIPTION                                                                                                                                                                                                AS AcctUnitName,
---       Cast(CONVERT(VARCHAR, CASE WHEN ACCT_PERIOD <= 3 THEN ACCT_PERIOD + 9 ELSE ACCT_PERIOD - 3 END) + '/1/' + CONVERT(VARCHAR, CASE WHEN ACCT_PERIOD <=3 THEN FISCAL_YEAR - 1 ELSE FISCAL_YEAR END) AS DATETIME) AS Date,
---       Sum(TRAN_AMOUNT)                                                                                                                                                                                             AS Amount
---FROM   GLTRANS a
---       INNER JOIN GLCHARTDTL b
---               ON a.ACCOUNT = b.ACCOUNT
---       INNER JOIN GLNAMES c
---               ON a.ACCT_UNIT = c.ACCT_UNIT
---                  AND a.COMPANY = c.COMPANY
---		left join bluebin.DimFacility df on a.COMPANY = df.FacilityID
---WHERE  SUMRY_ACCT_ID in (select ConfigValue from bluebin.Config where ConfigName = 'GLSummaryAccountID')
---GROUP  BY FISCAL_YEAR,
---          ACCT_PERIOD,
---          a.COMPANY,
---			df.FacilityName,
---			a.ACCOUNT,
---          b.ACCOUNT_DESC,
---          a.ACCT_UNIT,
---          c.DESCRIPTION 
+SELECT 
+	   FISCAL_YEAR                                                                                                                                                                                                  AS FiscalYear,
+       ACCT_PERIOD                                                                                                                                                                                                  AS AcctPeriod,
+       a.COMPANY,
+	   df.FacilityName,
+	   a.ACCOUNT                                                                                                                                                                                                    AS Account,
+       b.ACCOUNT_DESC                                                                                                                                                                                               AS AccountDesc,
+       a.ACCT_UNIT                                                                                                                                                                                                  AS AcctUnit,
+       c.DESCRIPTION                                                                                                                                                                                                AS AcctUnitName,
+       --(DATEADD(m, DATEDIFF(m, 0, a.POSTING_DATE), 0)),
+	   --Cast(CONVERT(VARCHAR, CASE WHEN ACCT_PERIOD <= 3 THEN ACCT_PERIOD + 9 ELSE ACCT_PERIOD - 3 END) + '/1/' + CONVERT(VARCHAR, CASE WHEN ACCT_PERIOD <=3 THEN FISCAL_YEAR - 1 ELSE FISCAL_YEAR END) AS DATETIME) AS Date,
+       COALESCE(
+				(DATEADD(m, DATEDIFF(m, 0, a.POSTING_DATE), 0)),
+				(Cast(CONVERT(VARCHAR, CASE WHEN ACCT_PERIOD <= 3 THEN ACCT_PERIOD + 9 ELSE ACCT_PERIOD - 3 END) + '/1/' + CONVERT(VARCHAR, CASE WHEN ACCT_PERIOD <=3 THEN FISCAL_YEAR - 1 ELSE FISCAL_YEAR END) AS DATETIME)),
+				NULL
+				) as [Date],
+	   Sum(TRAN_AMOUNT)                                                                                                                                                                                             AS Amount
+FROM   GLTRANS a
+       INNER JOIN GLCHARTDTL b
+               ON a.ACCOUNT = b.ACCOUNT
+       INNER JOIN GLNAMES c
+               ON a.ACCT_UNIT = c.ACCT_UNIT
+                  AND a.COMPANY = c.COMPANY
+		left join bluebin.DimFacility df on a.COMPANY = df.FacilityID
+WHERE  SUMRY_ACCT_ID in (select ConfigValue from bluebin.Config where ConfigName = 'GLSummaryAccountID')
+GROUP  BY 
+		  DATEADD(m, DATEDIFF(m, 0, a.POSTING_DATE), 0),
+		  FISCAL_YEAR,
+          ACCT_PERIOD,
+          a.COMPANY,
+			df.FacilityName,
+			a.ACCOUNT,
+          b.ACCOUNT_DESC,
+          a.ACCT_UNIT,
+          c.DESCRIPTION 
 
-
-SELECT '' AS FiscalYear,
-       '' AS  AcctPeriod,
-       '' AS COMPANY,
-	   '' AS FacilityName,
-	   '' AS  Account,
-       '' AS  AccountDesc,
-       '' AS  AcctUnit,
-       '' AS  AcctUnitName,
-       '' AS  Date,
-       '' AS  Amount
- 
 
 
 END
@@ -2233,79 +3172,67 @@ BEGIN
 SET NOCOUNT ON
 Declare @UseClinicalDescription int
 select @UseClinicalDescription = ConfigValue from bluebin.Config where ConfigName = 'UseClinicalDescription'         
-
+	
 SELECT 
-	df.FacilityID,
+	a.COMPANY,
 	df.FacilityName,
-	Bins.INV_ITEM_ID  as LawsonItemNumber,
-	di.ItemManufacturerNumber  as ItemManufacturerNumber,
-	--di.ItemDescription as ClinicalDescription,
+	a.ITEM as LawsonItemNumber,
+	ISNULL(c.MANUF_NBR,'N/A') as ItemManufacturerNumber,
 	case when @UseClinicalDescription = 1 then
 		case 
-			when bn.INV_BRAND_NAME is null or bn.INV_BRAND_NAME = ''  then
+			when b.ClinicalDescription is null or b.ClinicalDescription = ''  then
+			case
+				when a.USER_FIELD3 is null or a.USER_FIELD3 = ''  then
+				case	
+					when a.USER_FIELD1 is null or a.USER_FIELD1 = '' then 
 					case 
-						when di.ItemDescription is null or di.ItemDescription = '' then '*NEEDS*'  
-						else di.ItemDescription 
-						end 
-		else bn.INV_BRAND_NAME end 
-	else di.ItemDescription end as ClinicalDescription,
-	dl.LocationID as LocationCode,
-	dl.LocationName,
-	CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then LEFT(Bins.COMPARTMENT,2) 
-				else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN LEFT(Bins.COMPARTMENT, 2) ELSE LEFT(Bins.COMPARTMENT, 1) END END as Cart,
-			CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then SUBSTRING(Bins.COMPARTMENT, 3, 1) 
-				else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN SUBSTRING(Bins.COMPARTMENT, 3, 1) ELSE SUBSTRING(Bins.COMPARTMENT, 2,1) END END as Row,
-			CASE WHEN ISNUMERIC(left(Bins.COMPARTMENT,1))=1 then SUBSTRING(Bins.COMPARTMENT, 4, 2)
-				else CASE WHEN Bins.COMPARTMENT LIKE '[A-Z][A-Z]%' THEN SUBSTRING (Bins.COMPARTMENT,4,2) ELSE SUBSTRING(Bins.COMPARTMENT, 3,2) END END as Position
+						when c.DESCRIPTION is null or c.DESCRIPTION = '' then '*NEEDS*'
+					else c.DESCRIPTION  end 
+				else a.USER_FIELD1 end
+			else a.USER_FIELD3 end
+		else b.ClinicalDescription end	
+	else c.DESCRIPTION
+	end as ClinicalDescription,
+	a.LOCATION as LocationCode,
+	a.NAME as LocationName,
+	a.Cart,
+	a.Row,
+	a.Position
+FROM 
+(SELECT 
+	a.COMPANY,
+	ITEM,
+	LOCATION,
+	b.NAME,
+	USER_FIELD1,
+	USER_FIELD3,
+	CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then LEFT(PREFER_BIN,2) 
+		else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN LEFT(PREFER_BIN, 2) ELSE LEFT(PREFER_BIN, 1) END END as Cart,
+	CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then SUBSTRING(PREFER_BIN, 3, 1) 
+		else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN SUBSTRING(PREFER_BIN, 3, 1) ELSE SUBSTRING(PREFER_BIN, 2,1) END END as Row,
+	CASE WHEN ISNUMERIC(left(PREFER_BIN,1))=1 then SUBSTRING(PREFER_BIN, 4, 2)
+		else CASE WHEN PREFER_BIN LIKE '[A-Z][A-Z]%' THEN SUBSTRING (PREFER_BIN,4,2) ELSE SUBSTRING(PREFER_BIN, 3,2) END END as Position	
+FROM ITEMLOC a 
+INNER JOIN RQLOC b ON a.LOCATION = b.REQ_LOCATION and a.COMPANY = b.COMPANY
+WHERE LEFT(REQ_LOCATION, 2) IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) or REQ_LOCATION in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION)) a
+LEFT JOIN 
+(SELECT 
+	ITEM, 
+	max(USER_FIELD3) as ClinicalDescription
+FROM ITEMLOC 
+WHERE LOCATION IN (SELECT [ConfigValue] FROM [bluebin].[Config] WHERE  [ConfigName] = 'LOCATION' AND Active = 1) AND LEN(LTRIM(USER_FIELD3) ) > 0 group by ITEM
+) b
+ON a.ITEM = b.ITEM
 
-FROM   
-	(select distinct 
-	INV_CART_ID, 
-	INV_ITEM_ID,
-	--COMPARTMENT,
-	case when LEN(COMPARTMENT) < 6 then '' else COMPARTMENT end as COMPARTMENT,
-	QTY_OPTIMAL,
-	UNIT_OF_MEASURE
-	
-	 from dbo.CART_TEMPL_INV 
-	 ) Bins
-	          
-	  INNER JOIN dbo.CART_ATTRIB_INV Carts
-              ON Bins.INV_CART_ID = Carts.INV_CART_ID
-		INNER JOIN bluebin.DimLocation dl
-              ON Carts.LOCATION COLLATE DATABASE_DEFAULT = dl.LocationID
-		--INNER JOIN dbo.BU_ITEMS_INV bu on Bins.INV_ITEM_ID = bu.INV_ITEM_ID
-		INNER JOIN bluebin.DimFacility df on dl.LocationFacility = df.FacilityID
-		left join bluebin.DimItem di on Bins.INV_ITEM_ID = di.ItemID
-		left join BRAND_NAMES_INV bn on Bins.INV_ITEM_ID = bn.INV_ITEM_ID
-WHERE LEFT(Carts.LOCATION, 2) IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) or Carts.LOCATION in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION) and Bins.COMPARTMENT <> ''
+left join ITEMMAST c on a.ITEM = c.ITEM
+left join bluebin.DimFacility df on a.COMPANY = df.FacilityID
 
---and Bins.INV_ITEM_ID = '1000250'
-group by
-df.FacilityID,
-	df.FacilityName,
-	Bins.INV_ITEM_ID,
-	--di.ItemDescription,
-		case when @UseClinicalDescription = 1 then
-		case 
-			when bn.INV_BRAND_NAME is null or bn.INV_BRAND_NAME = ''  then
-					case 
-						when di.ItemDescription is null or di.ItemDescription = '' then '*NEEDS*'  
-						else di.ItemDescription
-						 end 
-		else bn.INV_BRAND_NAME end 
-	else di.ItemDescription end,
-	di.ItemManufacturerNumber,
-	dl.LocationID,
-	dl.LocationName,
-	Bins.COMPARTMENT
 
 
 END
 GO
 grant exec on tb_ItemLocator to public
 GO
-
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
@@ -2323,59 +3250,45 @@ BEGIN
 SET NOCOUNT ON
 
 
---SELECT 
---a.COMPANY,
---df.FacilityName,
---CREATION_DATE   AS Date,
---       CASE
---         WHEN LEFT(a.REQ_LOCATION, 2) IN (SELECT ConfigValue
---                                          FROM   [bluebin].[Config]
---                                          WHERE  ConfigName = 'REQ_LOCATION') 
---											or 
---										  a.REQ_LOCATION in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION) 
---										  THEN 'BlueBin'
---         ELSE 'Non BlueBin'
---       END             AS LineType,
---       b.ISS_ACCT_UNIT AS AcctUnit,
---       ISNULL(c.DESCRIPTION,'Unknown')   AS AcctUnitName,
---       a.REQ_LOCATION  AS Location,
---       b.NAME          AS LocationName,
---       1               AS LineCount
-
---FROM   REQLINE a
---       INNER JOIN RQLOC b
---               ON a.COMPANY = b.COMPANY
---                  AND a.REQ_LOCATION = b.REQ_LOCATION
---       LEFT JOIN GLNAMES c
---               ON b.COMPANY = c.COMPANY
---                  AND b.ISS_ACCT_UNIT = c.ACCT_UNIT 
---	   INNER JOIN bluebin.DimFacility df on rtrim(a.COMPANY) = rtrim(df.FacilityID)
---order by 2
-
 SELECT 
-'' AS COMPANY,
-'' AS FacilityName,
-'' AS Date,
-'' AS LineType,
-'' AS AcctUnit,
-'' AS AcctUnitName,
-'' AS Location,
-'' AS LocationName,
-       1               AS LineCount,
-	   as NAME
+a.COMPANY,
+df.FacilityName,
+CREATION_DATE   AS Date,
+       CASE
+         WHEN LEFT(a.REQ_LOCATION, 2) IN (SELECT ConfigValue
+                                          FROM   [bluebin].[Config]
+                                          WHERE  ConfigName = 'REQ_LOCATION') 
+											or 
+										  a.REQ_LOCATION in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION) 
+										  THEN 'BlueBin'
+         ELSE 'Non BlueBin'
+       END             AS LineType,
+       b.ISS_ACCT_UNIT AS AcctUnit,
+       ISNULL(c.DESCRIPTION,'Unknown')   AS AcctUnitName,
+       a.REQ_LOCATION  AS Location,
+       b.NAME          AS LocationName,
+       1               AS LineCount
 
-
-
-
+FROM   REQLINE a
+       INNER JOIN RQLOC b
+               ON a.COMPANY = b.COMPANY
+                  AND a.REQ_LOCATION = b.REQ_LOCATION
+       LEFT JOIN GLNAMES c
+               ON b.COMPANY = c.COMPANY
+                  AND b.ISS_ACCT_UNIT = c.ACCT_UNIT 
+	   INNER JOIN bluebin.DimFacility df on rtrim(a.COMPANY) = rtrim(df.FacilityID)
+order by 2
 END
 GO
 grant exec on tb_LineVolume to public
 GO
 
 
+
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_PickLines') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_PickLines
 GO
@@ -2404,41 +3317,6 @@ GO
 grant exec on tb_PickLines to public
 GO
 
-
---*********************************************************************************************
---Tableau Sproc  These load data into the datasources for Tableau
---*********************************************************************************************
-
-
-if exists (select * from dbo.sysobjects where id = object_id(N'tb_HBPickLines') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure tb_HBPickLines
-GO
---exec tb_HBPickLines
-CREATE PROCEDURE tb_HBPickLines
-AS
-BEGIN
-SET NOCOUNT ON
-
-
-SELECT 
-df.FacilityName,
-fi.LocationID,
-Cast(fi.IssueDate AS DATE) AS Date,
-Count(*) AS PickLine
-FROM   bluebin.FactIssue fi
-inner join bluebin.DimFacility df on fi.ShipFacilityKey = df.FacilityID
-
-WHERE fi.IssueDate > getdate() -15 and fi.LocationID in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT') --Filter for HB
-
-GROUP  BY df.FacilityName,fi.LocationID,Cast(fi.IssueDate AS DATE)
-order by 1,2,3 
-
-
-
-END
-GO
-grant exec on tb_HBPickLines to public
-GO
 
 
 --*********************************************************************************************
@@ -2507,6 +3385,67 @@ GO
 grant exec on tb_QCNDashboard to public
 GO
 
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_StatCalls') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_StatCalls
+GO
+
+--exec tb_StatCalls
+CREATE PROCEDURE tb_StatCalls
+AS
+BEGIN
+SET NOCOUNT ON
+;
+WITH A as 
+	(
+
+SELECT
+    a.FROM_TO_CMPY,
+	df.FacilityName,
+	--a.LOCATION,
+	b.REQ_LOCATION as LocationID,
+	dl.LocationName,
+	case when dl.BlueBinFlag = 1 then 'Yes' else 'No' end as BlueBinFlag,
+	TRANS_DATE as Date,
+    COUNT(*) as StatCalls,
+    case when c.ACCT_UNIT is null then 'None' else LTRIM(RTRIM(c.ACCT_UNIT)) + ' - '+ c.DESCRIPTION  end as Department
+FROM
+    ICTRANS a 
+INNER JOIN
+RQLOC b ON a.FROM_TO_CMPY = b.COMPANY AND a.FROM_TO_LOC = b.REQ_LOCATION
+LEFT JOIN GLNAMES c ON b.COMPANY = c.COMPANY AND b.ISS_ACCT_UNIT = c.ACCT_UNIT
+INNER JOIN bluebin.DimFacility df on a.FROM_TO_CMPY = df.FacilityID
+INNER JOIN bluebin.DimLocation dl on b.REQ_LOCATION = dl.LocationID
+
+WHERE SYSTEM_CD = 'IC' AND DOC_TYPE = 'IS' --and dl.BlueBinFlag = 1
+GROUP BY
+    a.FROM_TO_CMPY,
+	df.FacilityName,
+	--a.LOCATION,
+	b.REQ_LOCATION,
+	dl.LocationName,
+	dl.BlueBinFlag,
+	TRANS_DATE,
+    c.ACCT_UNIT,
+    c.DESCRIPTION
+) 
+			
+select 
+distinct A.*,
+case when 
+i.REPL_FROM_LOC is not null then 'Yes' else 'No' end as WHSource
+from A
+left join ITEMSRC i on A.FROM_TO_CMPY = i.COMPANY and A.LocationID = i.LOCATION and REPLENISH_PRI = '1' and REPL_FROM_LOC in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+Order by A.Date desc
+
+
+END
+GO
+grant exec on tb_StatCalls to public
+GO
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
@@ -2549,11 +3488,18 @@ SELECT
        a.UnitCost,
 	   c.LastPODate,
 	   a.StockUOM as UOM
-       ,'' AS LYYTDIssueQty,
-       '' AS CYYTDIssueQty
+       ,Sum(CASE
+             WHEN TRANS_DATE >= Dateadd(YEAR, Datediff(YEAR, 0, Dateadd(YEAR, -1, Getdate())), 0)
+                  AND TRANS_DATE <= Dateadd(YEAR, -1, Getdate()) THEN b.QUANTITY * -1
+             ELSE 0
+           END) / Month(Getdate()) AS LYYTDIssueQty,
+       Sum(CASE
+             WHEN TRANS_DATE >= Dateadd(YEAR, Datediff(YEAR, 0, Getdate()), 0) THEN b.QUANTITY * -1
+             ELSE 0
+           END) / Month(Getdate()) AS CYYTDIssueQty
 FROM   bluebin.DimWarehouseItem a
-       --LEFT JOIN ICTRANS b
-       --        ON ltrim(rtrim(a.ItemID)) = ltrim(rtrim(ITEM)) 
+       LEFT JOIN ICTRANS b
+               ON ltrim(rtrim(a.ItemID)) = ltrim(rtrim(ITEM)) 
 		LEFT JOIN bluebin.DimItem c
 			   ON a.ItemKey = c.ItemKey
 WHERE  SOHQty > 0 --b.DOC_TYPE = 'IS' and Year(b.TRANS_DATE) >= Year(Getdate()) - 1
@@ -2578,7 +3524,6 @@ END
 GO
 grant exec on tb_WarehouseSize to public
 GO
-
 
 
 --*********************************************************************************************
@@ -2608,17 +3553,16 @@ SELECT
 	
 	SnapshotDate,
 	FacilityName,
-	'' as DollarsOnHand,
+	SUM(SOH * UnitCost) as DollarsOnHand,
 	LocationID,
 	LocationID as LocationName
 FROM bluebin.FactWarehouseSnapshot a
-WHERE a.SOH > 0
+WHERE SOH > 0
 GROUP BY
 	
 	SnapshotDate,
 	FacilityName,
 	LocationID 
-;
 
 
 END
@@ -2681,17 +3625,104 @@ GO
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
 
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_GembaDashboard') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_GembaDashboard
+GO
+
+--exec tb_GembaDashboard 
+CREATE PROCEDURE tb_GembaDashboard
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+declare @GembaIdentifier varchar(50)
+select @GembaIdentifier = ConfigValue from bluebin.Config where ConfigName = 'GembaIdentifier'
+
+if @GembaIdentifier = '' 
+BEGIN
+set @GembaIdentifier = 'XXXXX'
+END
+
+select 
+	g.[GembaAuditNodeID],
+	df.FacilityName,
+	dl.[LocationID],
+	dl.LocationID as AuditLocationID,
+        dl.[LocationName],
+			dl.BlueBinFlag,
+	u.LastName + ', ' + u.FirstName  as Auditer,
+    u.[UserLogin] as Login,
+	u.Title as RoleName,
+	u.GembaTier,
+	g.PS_TotalScore,
+	g.RS_TotalScore,
+	g.SS_TotalScore,
+	g.NIS_TotalScore,
+	g.TotalScore,
+	case when TotalScore < 90 then 1 else 0 end as ScoreUnder,
+	(select count(*) from bluebin.DimLocation where BlueBinFlag = 1) as LocationCount,
+    g.[Date],
+	g2.[MaxDate] as LastAuditDate,
+	case 
+		when g.[Date] is null then 365
+		else convert(int,(getdate() - g2.[MaxDate])) end as LastAudit,
+	tier1.[MaxDate] as LastAuditDateTier1,
+	case 
+		when g.[Date] is null  and tier1.[MaxDate] is null or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier1')) then 365
+		else convert(int,(getdate() - tier1.[MaxDate])) end as LastAuditTier1,
+	tier2.[MaxDate] as LastAuditDateTier2,	
+	case 
+		when g.[Date] is null  and tier2.[MaxDate] is null or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier2')) then 365
+		else convert(int,(getdate() - tier2.[MaxDate])) end as LastAuditTier2,
+	tier3.[MaxDate] as LastAuditDateTier3,	
+	case 
+		when g.[Date] is null and tier3.[MaxDate] is null  or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier3')) then 365
+		else convert(int,(getdate() - tier3.[MaxDate])) end as LastAuditTier3,
+		
+    g.[LastUpdated],
+	PS_Comments,
+	RS_Comments,
+	NIS_Comments,
+	SS_Comments,
+	AdditionalComments,
+	case
+		when AdditionalComments like '%'+ @GembaIdentifier + '%' then 'Yes' else 'No' end as GembaIdent
+from  [bluebin].[DimLocation] dl
+		left join [gemba].[GembaAuditNode] g on dl.LocationID = g.LocationID
+		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] group by LocationID) g2 on dl.LocationID = g2.LocationID and g.[Date] = g2.MaxDate
+		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier1') group by LocationID) tier1 on dl.LocationID = tier1.LocationID and g.[Date] = tier1.MaxDate
+		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier2') group by LocationID) tier2 on dl.LocationID = tier2.LocationID and g.[Date] = tier2.MaxDate
+		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier3') group by LocationID) tier3 on dl.LocationID = tier3.LocationID and g.[Date] = tier3.MaxDate
+        --left join [bluebin].[DimLocation] dl on g.LocationID = dl.LocationID and dl.BlueBinFlag = 1
+		left join [bluebin].[BlueBinUser] u on g.AuditerUserID = u.BlueBinUserID
+		left join bluebin.BlueBinRoles bbr on u.RoleID = bbr.RoleID
+		left join bluebin.DimFacility df on dl.LocationFacility = df.FacilityID
+WHERE dl.BlueBinFlag = 1 and (g.Active = 1 or g.Active is null)
+            order by dl.LocationID,[Date] asc
+
+END
+GO
+grant exec on tb_GembaDashboard to public
+GO
+
+
+
+
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_KanbansAdjusted') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_KanbansAdjusted
 GO
 
 --exec tb_KanbansAdjusted  
 /*
-20171025 GB - updated to be 30 days instead of 7
-declare
-
-declare @ItemID varchar(32) = '35744'
-declare @Location varchar(5) = 'DN044'
+declare @ItemID varchar(32) = '07018'
+declare @Location varchar(5) = 'BK004'
 select * from bluebin.DimBinHistory where ItemID = @ItemID and LocationID = @Location
 select * from bluebin.DimBin where ItemID = @ItemID and LocationID = @Location
 select * from tableau.Kanban where ItemID = @ItemID and LocationID = @Location and [Date] > getdate() -7 and Scan = 1
@@ -2700,7 +3731,9 @@ select * from tableau.Kanban where ItemID = @ItemID and LocationID = @Location a
 CREATE PROCEDURE [dbo].[tb_KanbansAdjusted] 
 	
 AS
+
 BEGIN
+
 
 select 
 [Week]
@@ -2750,10 +3783,6 @@ case when a.OrderQty is not null and a.OrderQty <> a.BinQty and a.OrderUOM = a.B
 ,case when a.OrderQty is not null and a.OrderQty <> a.BinQty and a.OrderUOM = a.BinUOM and db.BinCurrentStatus <> 'Never Scanned' and a.OrderQty <> 0  then 1 else 0 end as BinOrderChange
 ,db.BinCurrentStatus
 
-
-
-
-
 from bluebin.DimBin db 
 inner join bluebin.DimFacility df on db.BinFacility = df.FacilityID
 inner join bluebin.DimLocation dl on db.LocationID = dl.LocationID
@@ -2762,9 +3791,9 @@ inner join bluebin.DimItem di on db.ItemID = di.ItemID
 left join(select distinct dbh.[Date],dbh.BinKey,dbh.FacilityID,dbh.LocationID,dbh.ItemID,dbh.BinQty,dbh.BinUOM,dbh.[Sequence],dbh.LastBinQty,dbh.LastBinUOM,dbh.[LastSequence] 
 			from bluebin.DimBinHistory dbh
 			inner join (select FacilityID,LocationID,ItemID,max(Date) as LastDate from bluebin.DimBinHistory group by FacilityID,LocationID,ItemID) mmax 
-							on dbh.FacilityID = mmax.FacilityID and dbh.LocationID = mmax.LocationID and dbh.ItemID = mmax.ItemID and dbh.[Date] = mmax.LastDate) dbh on db.BinFacility = dbh.FacilityID and db.LocationID = dbh.LocationID and db.ItemID = dbh.ItemID and dbh.[Date] >= getdate() -30
+							on dbh.FacilityID = mmax.FacilityID and dbh.LocationID = mmax.LocationID and dbh.ItemID = mmax.ItemID and dbh.[Date] = mmax.LastDate) dbh on db.BinFacility = dbh.FacilityID and db.LocationID = dbh.LocationID and db.ItemID = dbh.ItemID and dbh.[Date] >= getdate() -7
 
-left join (select FacilityID,LocationID,ItemID,[Date],OrderQty,OrderUOM,BinUOM,BinQty from tableau.Kanban where Scan = 1 and OrderQty <> BinQty and OrderQty <> 0 and Date >= getdate() -30) a on db.BinFacility= a.FacilityID and db.LocationID = a.LocationID and db.ItemID = a.ItemID-- and a.[Date] >= dbh.LastDate
+left join (select FacilityID,LocationID,ItemID,[Date],OrderQty,OrderUOM,BinUOM,BinQty from tableau.Kanban where Scan = 1 and OrderQty <> BinQty and OrderQty <> 0 and Date >= getdate() -7) a on db.BinFacility= a.FacilityID and db.LocationID = a.LocationID and db.ItemID = a.ItemID-- and a.[Date] >= dbh.LastDate
 
 
 --where dbh.[Date] >= getdate() -7 
@@ -2796,10 +3825,13 @@ order by FacilityID,LocationID,ItemID
 
 
 
+
+
 END
 GO
 grant exec on tb_KanbansAdjusted to public
 GO
+
 
 
 
@@ -2855,8 +3887,6 @@ GO
 
 
 
-
-
 IF EXISTS ( SELECT  *
             FROM    sys.objects
             WHERE   object_id = OBJECT_ID(N'tb_OrderVolume')
@@ -2870,24 +3900,22 @@ CREATE PROCEDURE	tb_OrderVolume
 AS
 
 SET NOCOUNT on
-declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
-  
 
 select 
-k.OrderDate as CREATION_DATE,
-@Facility as COMPANY,
+rq.CREATION_DATE,
+rq.COMPANY,
 df.FacilityName,
-k.LocationID as REQ_LOCATION,
-k.OrderNum as REQ_NUMBER,
-k.LineNum as Lines,
-'BlueBin' as NAME,
+rq.REQ_LOCATION,
+rq.REQ_NUMBER,
+rq.LINE_NBR as Lines,
+r.NAME,
 dl.BlueBinFlag
-from tableau.Kanban k
-inner join bluebin.DimLocation dl on @Facility = rtrim(dl.LocationFacility) and k.LocationID = dl.LocationID
-inner join bluebin.DimFacility df on @Facility = rtrim(df.FacilityID)
---left join REQUESTER r on rh.REQUESTER = r.REQUESTER and rq.COMPANY = r.COMPANY
-where k.OrderDate > getdate()-15 and Scan > 0
+from REQLINE rq
+inner join bluebin.DimLocation dl on rtrim(rq.COMPANY) = rtrim(dl.LocationFacility) and rq.REQ_LOCATION = dl.LocationID
+inner join bluebin.DimFacility df on rtrim(rq.COMPANY) = rtrim(df.FacilityID)
+inner join REQHEADER rh on rq.REQ_NUMBER = rh.REQ_NUMBER
+left join REQUESTER r on rh.REQUESTER = r.REQUESTER and rq.COMPANY = r.COMPANY
+where rq.CREATION_DATE > getdate()-15
 
 
 
@@ -2895,102 +3923,38 @@ GO
 grant exec on tb_OrderVolume to public
 GO
 
+
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
-
-if exists (select * from dbo.sysobjects where id = object_id(N'tb_LocationForecast') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure tb_LocationForecast
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_HBPickLines') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_HBPickLines
 GO
-
---exec tb_LocationForecast
---select top 10* from tableau.Sourcing
-
-
-CREATE PROCEDURE tb_LocationForecast
-
---WITH ENCRYPTION
+--exec tb_HBPickLines
+CREATE PROCEDURE tb_HBPickLines
 AS
 BEGIN
 SET NOCOUNT ON
 
-select 
-FacilityName,
-LocationName,
-LocationID,
-ItemID,
-ItemClinicalDescription,
-BinUOM,
-ItemType,
---convert(int,TotalPar) as TotalPar,
---[Month],
-FirstPODate,
---Sum(OrderQty)/365 as AvgDailyQty,
---Sum(OrderQty)/12 as AvgMonthlyQty,
-Sum(OrderQty) as TotalOrderQty,
-case when Denominator > 365 then Sum(OrderQty)/365 else Sum(OrderQty)/Denominator end as AvgDailyQty,
-case when Denominator > 365 then Sum(OrderQty)/12 else Sum(OrderQty)/Denominator30 end as AvgMonthlyQty
 
---Sum(OrderQty*BinCurrentCost) as Cost
-from (
-	select
-	k.FacilityName,
-	dl.LocationName,
-	dl.LocationID,
-	k.ItemNumber as ItemID,
-	di.ItemClinicalDescription,
-	k.[PODate],
-	dateadd(month,datediff(month,0,k.[PODate]),0) as [Month],
-	k.BuyUOM as BinUOM,
-	k.POItemType as ItemType,
-	k.QtyOrdered as OrderQty,
-	db.BinQty as TotalPar,
-	db.BinCurrentCost,
-	convert(Decimal(13,4),a.Denominator) as Denominator,
-	convert(Decimal(13,4),a.Denominator)/30 as Denominator30,
-	a.FirstPODate
-	from tableau.Sourcing k
-	left join bluebin.DimBin db on k.PurchaseFacility = db.BinFacility and k.PurchaseLocation = db.LocationID and k.ItemNumber = db.ItemID
-	inner join bluebin.DimLocation dl on k.PurchaseLocation = dl.LocationID
-	inner join bluebin.DimItem di on k.ItemNumber = di.ItemID
-	inner join (
-				select 
-					Company,
-					PurchaseLocation,
-					ItemNumber,
-					min(PODate) as FirstPODate,
-					DATEDIFF(day,min(PODate),getdate()) as Denominator
-					from tableau.Sourcing 
-					where  (PurchaseLocation is not null or PurchaseLocation <> '') --and PODate > getdate() -365 
-					group by
-					Company,
-					PurchaseLocation,
-					ItemNumber
-					--order by 5 asc
-				) a on k.Company = a.Company and k.PurchaseLocation = a.PurchaseLocation and k.ItemNumber = a.ItemNumber
+SELECT 
+df.FacilityName,
+fi.LocationID,
+Cast(fi.IssueDate AS DATE) AS Date,
+Count(*) AS PickLine
+FROM   bluebin.FactIssue fi
+inner join bluebin.DimFacility df on fi.ShipFacilityKey = df.FacilityID
 
-	where k.QtyOrdered is not null and k.BlueBinFlag = 'No' and PODate > getdate() -365
-	--and k.PODate > getdate() -10
-	) a
+WHERE fi.IssueDate > getdate() -15 and fi.LocationID in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') --Filter for HB
 
-group by
-FacilityName,
-LocationName,
-LocationID,
-ItemID,
-ItemClinicalDescription,
-BinUOM,
-ItemType,
-FirstPODate,
-Denominator,
-Denominator30
---convert(int,TotalPar),
---[Month]
-order by 1,2,4
+GROUP  BY df.FacilityName,fi.LocationID,Cast(fi.IssueDate AS DATE)
+order by 1,2,3 
+
+
 
 END
 GO
-grant exec on tb_LocationForecast to public
+grant exec on tb_HBPickLines to public
 GO
 
 
@@ -3093,6 +4057,166 @@ grant exec on tb_TodaysOrders to public
 GO
 
 
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_LocationForecast') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_LocationForecast
+GO
+
+--exec tb_LocationForecast
+--select top 10* from tableau.Sourcing
+
+
+CREATE PROCEDURE tb_LocationForecast
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+select 
+FacilityName,
+LocationName,
+LocationID,
+ItemID,
+ItemClinicalDescription,
+BinUOM,
+ItemType,
+--convert(int,TotalPar) as TotalPar,
+--[Month],
+FirstPODate,
+--Sum(OrderQty)/365 as AvgDailyQty,
+--Sum(OrderQty)/12 as AvgMonthlyQty,
+Sum(OrderQty) as TotalOrderQty,
+case when Denominator > 365 then Sum(OrderQty)/365 else Sum(OrderQty)/Denominator end as AvgDailyQty,
+case when Denominator > 365 then Sum(OrderQty)/12 else Sum(OrderQty)/Denominator30 end as AvgMonthlyQty
+
+--Sum(OrderQty*BinCurrentCost) as Cost
+from (
+	select
+	k.FacilityName,
+	dl.LocationName,
+	dl.LocationID,
+	k.ItemNumber as ItemID,
+	di.ItemClinicalDescription,
+	k.[PODate],
+	dateadd(month,datediff(month,0,k.[PODate]),0) as [Month],
+	k.BuyUOM as BinUOM,
+	k.POItemType as ItemType,
+	k.QtyOrdered as OrderQty,
+	db.BinQty as TotalPar,
+	db.BinCurrentCost,
+	convert(Decimal(13,4),a.Denominator) as Denominator,
+	convert(Decimal(13,4),a.Denominator)/30 as Denominator30,
+	a.FirstPODate
+	from tableau.Sourcing k
+	left join bluebin.DimBin db on k.PurchaseFacility = db.BinFacility and k.PurchaseLocation = db.LocationID and k.ItemNumber = db.ItemID
+	inner join bluebin.DimLocation dl on k.PurchaseLocation = dl.LocationID
+	inner join bluebin.DimItem di on k.ItemNumber = di.ItemID
+	inner join (
+				select 
+					Company,
+					PurchaseLocation,
+					ItemNumber,
+					min(PODate) as FirstPODate,
+					DATEDIFF(day,min(PODate),getdate()) as Denominator
+					from tableau.Sourcing 
+					where  (PurchaseLocation is not null or PurchaseLocation <> '') --and PODate > getdate() -365 
+					group by
+					Company,
+					PurchaseLocation,
+					ItemNumber
+					--order by 5 asc
+				) a on k.Company = a.Company and k.PurchaseLocation = a.PurchaseLocation and k.ItemNumber = a.ItemNumber
+
+	where k.QtyOrdered is not null and k.BlueBinFlag = 'No' and PODate > getdate() -365
+	--and k.PODate > getdate() -10
+	) a
+
+group by
+FacilityName,
+LocationName,
+LocationID,
+ItemID,
+ItemClinicalDescription,
+BinUOM,
+ItemType,
+FirstPODate,
+Denominator,
+Denominator30
+--convert(int,TotalPar),
+--[Month]
+order by 1,2,4
+
+END
+GO
+grant exec on tb_LocationForecast to public
+GO
+
+
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_StatCallsLocation') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_StatCallsLocation
+GO
+
+--exec tb_StatCallsLocation
+CREATE PROCEDURE tb_StatCallsLocation
+AS
+BEGIN
+SET NOCOUNT ON
+;
+WITH A as 
+	(
+
+SELECT
+    a.FROM_TO_CMPY,
+	df.FacilityName,
+	--a.LOCATION,
+	b.REQ_LOCATION as LocationID,
+	dl.LocationName,
+	dl.BlueBinFlag,
+	TRANS_DATE as Date,
+    COUNT(*) as StatCalls,
+    case when c.ACCT_UNIT is null then 'None' else LTRIM(RTRIM(c.ACCT_UNIT)) + ' - '+ c.DESCRIPTION  end as Department
+FROM
+    ICTRANS a 
+INNER JOIN
+RQLOC b ON a.FROM_TO_CMPY = b.COMPANY AND a.FROM_TO_LOC = b.REQ_LOCATION
+LEFT JOIN GLNAMES c ON b.COMPANY = c.COMPANY AND b.ISS_ACCT_UNIT = c.ACCT_UNIT
+INNER JOIN bluebin.DimFacility df on a.FROM_TO_CMPY = df.FacilityID
+INNER JOIN bluebin.DimLocation dl on b.REQ_LOCATION = dl.LocationID
+WHERE SYSTEM_CD = 'IC' AND DOC_TYPE = 'IS' and TRANS_DATE > getdate() -15---and dl.BlueBinFlag = 1
+GROUP BY
+    a.FROM_TO_CMPY,
+	df.FacilityName,
+	--a.LOCATION,
+	b.REQ_LOCATION,
+	dl.LocationName,
+	dl.BlueBinFlag,
+	TRANS_DATE,
+    c.ACCT_UNIT,
+    c.DESCRIPTION
+) 
+			
+select 
+distinct A.*,
+case when 
+i.REPL_FROM_LOC is not null then 'Yes' else 'No' end as WHSource
+from A
+left join ITEMSRC i on A.FROM_TO_CMPY = i.COMPANY and A.LocationID = i.LOCATION and REPLENISH_PRI = '1' and REPL_FROM_LOC in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+Order by A.Date desc
+
+
+
+END
+GO
+grant exec on tb_StatCallsLocation to public
+GO
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
@@ -3165,11 +4289,9 @@ grant exec on etl_DimBinHistory to public
 GO
 
 
-
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
-
 
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_ConesDeployed') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_ConesDeployed
@@ -3256,6 +4378,7 @@ GO
 
 
 
+
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
@@ -3299,6 +4422,8 @@ GO
 
 grant exec on tb_FillRateUtilization to public
 GO
+
+
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
@@ -3398,6 +4523,13 @@ GO
 
 grant exec on tb_CurrentStockOuts to public
 GO
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
@@ -3464,95 +4596,6 @@ A.BinStatus
 GO
 
 grant exec on tb_HealthTrends to public
-GO
-
-
-
---*********************************************************************************************
---Tableau Sproc  These load data into the datasources for Tableau
---*********************************************************************************************
-
-if exists (select * from dbo.sysobjects where id = object_id(N'tb_GembaDashboard') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure tb_GembaDashboard
-GO
-
---exec tb_GembaDashboard 
-CREATE PROCEDURE tb_GembaDashboard
-
-
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-
-declare @GembaIdentifier varchar(50)
-select @GembaIdentifier = ConfigValue from bluebin.Config where ConfigName = 'GembaIdentifier'
-
-if @GembaIdentifier = '' 
-BEGIN
-set @GembaIdentifier = 'XXXXX'
-END
-
-select 
-	g.[GembaAuditNodeID],
-	df.FacilityName,
-	dl.[LocationID],
-	dl.LocationID as AuditLocationID,
-        dl.[LocationName],
-			dl.BlueBinFlag,
-	u.LastName + ', ' + u.FirstName  as Auditer,
-    u.[UserLogin] as Login,
-	u.Title as RoleName,
-	u.GembaTier,
-	g.PS_TotalScore,
-	g.RS_TotalScore,
-	g.SS_TotalScore,
-	g.NIS_TotalScore,
-	g.TotalScore,
-	case when TotalScore < 90 then 1 else 0 end as ScoreUnder,
-	(select count(*) from bluebin.DimLocation where BlueBinFlag = 1) as LocationCount,
-    g.[Date],
-	g2.[MaxDate] as LastAuditDate,
-	case 
-		when g.[Date] is null then 365
-		else convert(int,(getdate() - g2.[MaxDate])) end as LastAudit,
-	tier1.[MaxDate] as LastAuditDateTier1,
-	case 
-		when g.[Date] is null  and tier1.[MaxDate] is null or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier1')) then 365
-		else convert(int,(getdate() - tier1.[MaxDate])) end as LastAuditTier1,
-	tier2.[MaxDate] as LastAuditDateTier2,	
-	case 
-		when g.[Date] is null  and tier2.[MaxDate] is null or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier2')) then 365
-		else convert(int,(getdate() - tier2.[MaxDate])) end as LastAuditTier2,
-	tier3.[MaxDate] as LastAuditDateTier3,	
-	case 
-		when g.[Date] is null and tier3.[MaxDate] is null  or g2.[MaxDate] is not null and dl.LocationID not in (select LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier3')) then 365
-		else convert(int,(getdate() - tier3.[MaxDate])) end as LastAuditTier3,
-		
-    g.[LastUpdated],
-	PS_Comments,
-	RS_Comments,
-	NIS_Comments,
-	SS_Comments,
-	AdditionalComments,
-	case
-		when AdditionalComments like '%'+ @GembaIdentifier + '%' then 'Yes' else 'No' end as GembaIdent
-from  [bluebin].[DimLocation] dl
-		left join [gemba].[GembaAuditNode] g on dl.LocationID = g.LocationID
-		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] group by LocationID) g2 on dl.LocationID = g2.LocationID and g.[Date] = g2.MaxDate
-		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier1') group by LocationID) tier1 on dl.LocationID = tier1.LocationID and g.[Date] = tier1.MaxDate
-		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier2') group by LocationID) tier2 on dl.LocationID = tier2.LocationID and g.[Date] = tier2.MaxDate
-		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] where AuditerUserID in (select BlueBinUserID from bluebin.BlueBinUser where GembaTier = 'Tier3') group by LocationID) tier3 on dl.LocationID = tier3.LocationID and g.[Date] = tier3.MaxDate
-        --left join [bluebin].[DimLocation] dl on g.LocationID = dl.LocationID and dl.BlueBinFlag = 1
-		left join [bluebin].[BlueBinUser] u on g.AuditerUserID = u.BlueBinUserID
-		left join bluebin.BlueBinRoles bbr on u.RoleID = bbr.RoleID
-		left join bluebin.DimFacility df on dl.LocationFacility = df.FacilityID
-WHERE dl.BlueBinFlag = 1 and (g.Active = 1 or g.Active is null)
-            order by dl.LocationID,[Date] asc
-
-END
-GO
-grant exec on tb_GembaDashboard to public
 GO
 
 
@@ -3813,6 +4856,7 @@ GO
 grant exec on tb_KanbansAdjustedHB to public
 GO
 
+
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
@@ -4016,13 +5060,10 @@ CREATE PROCEDURE tb_OpenScans
 AS
 
 
+
 select 
-case when p.REQ_ID is null or p.REQ_ID = ''
-then 
-	case when OrderNum like 'MSR%' then OrderNum
-		else OrderNum + ' (PO)' end
-	else ISNULL(p.REQ_ID,'') end as [Order Num],
-OrderNum as [PO Num],
+OrderNum as [Order Num],
+ltrim(rtrim(p.PO_NUMBER)) as [PO Num],
 LineNum as [Line #],
 OrderDate as [Order Date],
 FacilityName as [Facility Name],
@@ -4040,20 +5081,19 @@ BinCurrentStatus as [Bin Status],
 OrderQty as [Order Qty]
 
 
-
 --select top 10* 
 from tableau.Kanban k
-left outer join PO_LINE_DISTRIB p on k.OrderNum = p.PO_ID and k.LineNum = p.LINE_NBR
+left outer join POLINESRC p on k.OrderNum = p.SOURCE_DOC_N and k.LineNum = p.SRC_LINE_NBR
 
 where 
 --Date > getdate()-10 and 
 ScanHistseq > (select ConfigValue from bluebin.Config where ConfigName = 'ScanThreshold') and 
 OrderCloseDate is null and 
-OrderDate is not null --and p.PO_NUMBER is Null and ItemType = 'N'
-and p.REQ_ID <> '0'
+OrderDate is not null
+
 group by
 OrderNum,
-p.REQ_ID,
+p.PO_NUMBER,
 LineNum,
 OrderDate,
 FacilityName,
@@ -4075,58 +5115,68 @@ GO
 grant exec on tb_OpenScans to public
 GO
 
+
+
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
 
-if exists (select * from dbo.sysobjects where id = object_id(N'tb_StatCalls') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure tb_StatCalls
+
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_WarehouseHistory') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_WarehouseHistory
 GO
 
+--exec tb_WarehouseHistory
 
---exec tb_StatCalls
-CREATE PROCEDURE tb_StatCalls
+CREATE PROCEDURE tb_WarehouseHistory
+
+--WITH ENCRYPTION
 AS
 BEGIN
 SET NOCOUNT ON
 
-declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
+declare @History Table (Date date,FacilityName varchar(50),DollarsOnHand decimal(38,9),LocationID char(5),LocationName char(5),SKUS int,MonthEnd date)
 
+insert into @History 
+SELECT 
+       Date,
+	   FacilityName,
+	   DollarsOnHand,
+	   LocationID,
+	   LocationName,
+	   SKUS,
+	   case when EOMONTH(getdate()) = EOMONTH(Date) then (select max(Date) from bluebin.FactWHHistory) else EOMONTH(Date) end as MonthEnd
+FROM   bluebin.FactWHHistory
 
 SELECT 
---BUSINESS_UNIT,
-case when @Facility is not null or @Facility <> '' then @Facility else ''end as FROM_TO_CMPY,
-case when @Facility is not null or @Facility <> '' then (select FacilityName from bluebin.DimFacility where FacilityID = @Facility) else ''end as FacilityName,
-lt.LOCATION as LocationID,
-lt.DESCR as LocationName,
-case when ISNULL(dl.BlueBinFlag,0) = 1 then 'Yes' else 'No' end as BlueBinFlag,
-DEMAND_DATE       AS [Date],
-COUNT(*) as StatCalls,
-'' as Department,
-'No' as WHSource
+       a.Date,
+	   a.FacilityName,
+	   a.LocationID,
+	   a.LocationName,
+	   a.SKUS,
+	   a.DollarsOnHand,
+	   a.MonthEnd,
+	   c.DollarsOnHand as MonthEndDollars
+FROM @History  a
+	inner join (
+			SELECT 
+				   b.Date,
+				   b.FacilityName,
+				   b.LocationID,
+				   b.LocationName,
+				   b.SKUS,
+				   b.DollarsOnHand,
+				   case when EOMONTH(getdate()) = EOMONTH(b.Date) then (select max(Date) from bluebin.FactWHHistory) else EOMONTH(b.Date) end as MonthEnd
+			FROM   bluebin.FactWHHistory b 
+			where b.DollarsOnHand > 0 and b.Date = case when EOMONTH(getdate()) = EOMONTH(b.Date) then (select max(Date) from bluebin.FactWHHistory) else EOMONTH(b.Date) end  
+			) c on a.MonthEnd = c.Date and a.FacilityName = c.FacilityName and a.LocationID = c.LocationID
+order by a.Date desc       
 
-FROM   dbo.IN_DEMAND
-       LEFT JOIN dbo.LOCATION_TBL lt on rtrim(IN_DEMAND.LOCATION) = rtrim(lt.LOCATION)
-	   LEFT JOIN bluebin.DimLocation dl ON lt.LOCATION = dl.LocationID
-
-WHERE  PICK_BATCH_ID = 0
-       AND (BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNITSTAT') or SOURCE_BUS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT'))
-	   AND (IN_FULFILL_STATE in (select ConfigValue from bluebin.Config where ConfigName = 'PS_InFulfillState') or IN_FULFILL_STATE is null)
-GROUP BY
---DimLocation.LocationID,
---DimLocation.LocationName,
---BUSINESS_UNIT,
-lt.LOCATION,
-lt.DESCR,
-dl.BlueBinFlag,
-DEMAND_DATE
-Order by DEMAND_DATE
 
 
 END
 GO
-grant exec on tb_StatCalls to public
+grant exec on tb_WarehouseHistory to public
 GO
 
 --*********************************************************************************************
@@ -4576,6 +5626,90 @@ GO
 grant exec on tb_TimeStudyStrider to public
 GO
 
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_StatCallsDetail') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_StatCallsDetail
+GO
+
+
+--exec tb_StatCallsDetail
+CREATE PROCEDURE [dbo].[tb_StatCallsDetail]
+AS
+BEGIN
+SET NOCOUNT ON
+;
+WITH A as 
+	(
+
+		SELECT
+			a.FROM_TO_CMPY,
+			df.FacilityName,
+			--a.LOCATION,
+			b.REQ_LOCATION as LocationID,
+			dl.LocationName,
+			a.ITEM as ItemID,
+			CASE 
+					WHEN LEN(a.DOCUMENT) = 10 and LEFT(DOCUMENT,6) = '000000' THEN RIGHT(a.DOCUMENT,4)
+					WHEN LEN(a.DOCUMENT) = 10 and LEFT(DOCUMENT,5) = '00000' THEN RIGHT(a.DOCUMENT,5)
+					WHEN LEN(a.DOCUMENT) = 10 and LEFT(DOCUMENT,4) = '0000' THEN RIGHT(a.DOCUMENT,6)
+					WHEN LEN(a.DOCUMENT) = 10 and LEFT(DOCUMENT,3) = '000' THEN RIGHT(a.DOCUMENT,7)
+				ELSE a.DOCUMENT 
+				END AS OrderNo,
+			   a.TRANS_DATE as Date,
+			   a.LINE_NBR,
+			   SUM((a.QUANTITY*-1)) as QUANTITY,
+			   --MAX((Cast(CONVERT(VARCHAR, a.TRANS_DATE, 101) + ' '
+			   --     + LEFT(RIGHT('00000' + CONVERT(VARCHAR, a.ACTUAL_TIME), 4), 2)
+			   --     + ':'
+			   --     + Substring(RIGHT('00000' + CONVERT(VARCHAR, a.ACTUAL_TIME), 4), 3, 2) AS DATETIME))) AS TRANS_DATE,
+			case when c.ACCT_UNIT is null then 'None' else LTRIM(RTRIM(c.ACCT_UNIT)) + ' - '+ c.DESCRIPTION  end as Department,
+			case when dl.BlueBinFlag = 1 then 'Yes' else 'No' end as BlueBinFlag
+		FROM
+		ICTRANS a 
+		INNER JOIN RQLOC b ON a.FROM_TO_CMPY = b.COMPANY AND a.FROM_TO_LOC = b.REQ_LOCATION
+		LEFT JOIN GLNAMES c ON b.COMPANY = c.COMPANY AND b.ISS_ACCT_UNIT = c.ACCT_UNIT
+		INNER JOIN bluebin.DimFacility df on a.FROM_TO_CMPY = df.FacilityID
+		INNER JOIN bluebin.DimLocation dl on b.REQ_LOCATION = dl.LocationID
+		WHERE SYSTEM_CD = 'IC' AND DOC_TYPE = 'IS' 
+		--and dl.BlueBinFlag = 1 
+		and a.TRANS_DATE > getdate() -90
+		GROUP BY
+			a.FROM_TO_CMPY,
+			df.FacilityName,
+			--a.LOCATION,
+			dl.LocationName,
+			a.ITEM,
+			a.TRANS_DATE,
+			a.DOCUMENT,
+			a.LINE_NBR,
+			b.REQ_LOCATION,
+			dl.BlueBinFlag,
+			c.ACCT_UNIT,
+			c.DESCRIPTION ) 
+			
+select 
+A.*,
+case when 
+i.REPL_FROM_LOC is not null then 'Yes' else 'No' end as WHSource
+from A
+left join ITEMSRC i on A.FROM_TO_CMPY = i.COMPANY and A.LocationID = i.LOCATION and A.ItemID = i.ITEM and REPLENISH_PRI = '1' and REPL_FROM_LOC in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+
+
+Order by A.Date,A.OrderNo desc
+
+
+
+
+END
+GO
+grant exec on tb_StatCallsDetail to public
+GO
+
+
+
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
@@ -4728,181 +5862,11 @@ GO
 grant exec on tb_TimeStudyAverages to public
 GO
 
-
---*********************************************************************************************
---Tableau Sproc  These load data into the datasources for Tableau
---*********************************************************************************************
-
-if exists (select * from dbo.sysobjects where id = object_id(N'tb_StatCallsDetail') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure tb_StatCallsDetail
-GO
-
-
---exec tb_StatCallsDetail
-CREATE PROCEDURE [dbo].[tb_StatCallsDetail]
-AS
+if not exists (select * from sys.tables where name = 'FactActivityTimes')
 BEGIN
-SET NOCOUNT ON
-declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
-
-
-SELECT
-case when @Facility is not null or @Facility <> '' then @Facility else ''end as FROM_TO_CMPY,
-case when @Facility is not null or @Facility <> '' then (select FacilityName from bluebin.DimFacility where FacilityID = @Facility) else ''end as FacilityName,
-lt.LOCATION as LocationID,
-lt.DESCR as LocationName,
-INV_ITEM_ID as ItemID,
-ORDER_NO as OrderNo,
-DEMAND_DATE  AS [Date],
-ORDER_INT_LINE_NO as LINE_NBR,
-SUM((QTY_REQUESTED*-1)) as QUANTITY,
---QTY_REQUESTED as QUANTITY,
-    'N/A' as Department,
-case when ISNULL(dl.BlueBinFlag,0) = 1 then 'Yes' else 'No' end as BlueBinFlag,
-'No' as WHSource
-
-
-FROM   dbo.IN_DEMAND
-       INNER JOIN dbo.LOCATION_TBL lt on IN_DEMAND.LOCATION = lt.LOCATION
-	   LEFT JOIN bluebin.DimLocation dl ON lt.LOCATION = dl.LocationID
-
-WHERE  PICK_BATCH_ID = 0
-       --AND BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
-	   AND (BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNITSTAT') or SOURCE_BUS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT'))
-	   AND (IN_FULFILL_STATE in (select ConfigValue from bluebin.Config where ConfigName = 'PS_InFulfillState') or IN_FULFILL_STATE is null)
-	   and DEMAND_DATE > getdate() -90
-		--AND dl.BlueBinFlag = 1
-Group by
-lt.LOCATION,
-lt.DESCR,
-INV_ITEM_ID,
-ORDER_NO,
-DEMAND_DATE,
-ORDER_INT_LINE_NO,
-ISNULL(dl.BlueBinFlag,0)
-Order by DEMAND_DATE,ORDER_NO,ORDER_INT_LINE_NO
+exec etl_FactActivityTimes
 
 END
-
-GO
-grant exec on tb_StatCallsDetail to public
-GO
-
---*********************************************************************************************
---Tableau Sproc  These load data into the datasources for Tableau
---*********************************************************************************************
-
-if exists (select * from dbo.sysobjects where id = object_id(N'tb_StatCallsLocation') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure tb_StatCallsLocation
-GO
-
---exec tb_StatCallsLocation
-CREATE PROCEDURE tb_StatCallsLocation
-AS
-BEGIN
-SET NOCOUNT ON
-declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
-
-SELECT 
-case when @Facility is not null or @Facility <> '' then @Facility else ''end as FROM_TO_CMPY,
-case when @Facility is not null or @Facility <> '' then (select FacilityName from bluebin.DimFacility where FacilityID = @Facility) else ''end as FacilityName,
-lt.LOCATION as LocationID,
-lt.DESCR as LocationName,
-ISNULL(dl.BlueBinFlag,0) as BlueBinFlag,
-DEMAND_DATE       AS [Date],
-COUNT(*) as StatCalls,
-'' as Department,
-'No' as WHSource
-
-FROM   dbo.IN_DEMAND
-       INNER JOIN dbo.LOCATION_TBL lt on IN_DEMAND.LOCATION = lt.LOCATION
-	   LEFT JOIN bluebin.DimLocation dl ON lt.LOCATION = dl.LocationID
-
-WHERE  PICK_BATCH_ID = 0
-       --AND BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
-	   AND (BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNITSTAT') or SOURCE_BUS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT'))
-	   AND (IN_FULFILL_STATE in (select ConfigValue from bluebin.Config where ConfigName = 'PS_InFulfillState') or IN_FULFILL_STATE is null)
-GROUP BY
---DimLocation.LocationID,
---DimLocation.LocationName,
-lt.LOCATION,
-lt.DESCR,
-dl.BlueBinFlag,
-DEMAND_DATE
-Order by DEMAND_DATE
-
-
-
-
-END
-GO
-grant exec on tb_StatCallsLocation to public
-GO
-
-
-
---*********************************************************************************************
---Tableau Sproc  These load data into the datasources for Tableau
---*********************************************************************************************
-
-
-if exists (select * from dbo.sysobjects where id = object_id(N'tb_WarehouseHistory') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure tb_WarehouseHistory
-GO
-
---exec tb_WarehouseHistory
-
-CREATE PROCEDURE tb_WarehouseHistory
-
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-
-declare @History Table (Date date,FacilityName varchar(50),DollarsOnHand decimal(38,9),LocationID char(5),LocationName char(5),SKUS int,MonthEnd date)
-
-insert into @History 
-SELECT 
-       Date,
-	   FacilityName,
-	   DollarsOnHand,
-	   LocationID,
-	   LocationName,
-	   SKUS,
-	   case when EOMONTH(getdate()) = EOMONTH(Date) then (select max(Date) from bluebin.FactWHHistory) else EOMONTH(Date) end as MonthEnd
-FROM   bluebin.FactWHHistory
-
-SELECT 
-       a.Date,
-	   a.FacilityName,
-	   a.LocationID,
-	   a.LocationName,
-	   a.SKUS,
-	   a.DollarsOnHand,
-	   a.MonthEnd,
-	   c.DollarsOnHand as MonthEndDollars
-FROM @History  a
-	inner join (
-			SELECT 
-				   b.Date,
-				   b.FacilityName,
-				   b.LocationID,
-				   b.LocationName,
-				   b.SKUS,
-				   b.DollarsOnHand,
-				   case when EOMONTH(getdate()) = EOMONTH(b.Date) then (select max(Date) from bluebin.FactWHHistory) else EOMONTH(b.Date) end as MonthEnd
-			FROM   bluebin.FactWHHistory b 
-			where b.DollarsOnHand > 0 and b.Date = case when EOMONTH(getdate()) = EOMONTH(b.Date) then (select max(Date) from bluebin.FactWHHistory) else EOMONTH(b.Date) end  
-			) c on a.MonthEnd = c.Date and a.FacilityName COLLATE DATABASE_DEFAULT = c.FacilityName COLLATE DATABASE_DEFAULT and a.LocationID COLLATE DATABASE_DEFAULT = c.LocationID COLLATE DATABASE_DEFAULT
-order by a.Date desc       
-
-
-
-END
-GO
-grant exec on tb_WarehouseHistory to public
 GO
 
 --*********************************************************************************************
@@ -4918,26 +5882,14 @@ IF EXISTS ( SELECT  *
 DROP PROCEDURE  tb_BinSequence
 GO
 
-CREATE PROCEDURE tb_BinSequence
+CREATE PROCEDURE [dbo].[tb_BinSequence]
 
 AS
 
 BEGIN
-
-;
-
-/*
-select * from REQ_LINE_SHIP where REQ_ID = '0000089501' order by LINE_NBR
-select * from PO_LINE_DISTRIB where REQ_ID like '%89501%' order by LINE_NBR
-select * from REQ_LN_DISTRIB where REQ_ID like '%89501%' order by LINE_NBR
-*/
 SET NOCOUNT ON
 
 
-;
-
-declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
 ;
 WITH A as
 (
@@ -4961,21 +5913,30 @@ p.REQ_NUMBER as OrderNum,
 --p.PO_NUMBER as OrderNum,
 p.LINE_NBR as OrderLineNum,
 p.QUANTITY as OrderQty,
-p.CUSTOM_C1_C as OrderSequence
+p.PO_USER_FLD_4 as OrderSequence
 
 from 
-(select @Facility as COMPANY, 
-		rs.INV_ITEM_ID as ITEM,
-		rs.REQ_DT AS CREATION_DATE,
-		rs.REQ_ID as REQ_NUMBER,
-		rs.LINE_NBR,
-		'' as QUANTITY,
-		rs.CUSTOM_C1_C,
-		po.LOCATION as REQ_LOCATION 
-		from REQ_LINE_SHIP rs
-		inner join REQ_LN_DISTRIB po on right(('0000000000' + po.REQ_ID),10) = rs.REQ_ID and po.LINE_NBR = rs.LINE_NBR  
-			where CUSTOM_C1_C in ('A','B')) p
-			
+(select p.COMPANY, 
+		p.ITEM,
+		case	
+		when convert(int,(Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 5, 2))) < 60
+		then 
+		   Cast(CONVERT(VARCHAR, CREATION_DATE, 101) + ' '
+				+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 5, 2) AS DATETIME)
+		else
+			Cast(CONVERT(VARCHAR, CREATION_DATE, 101) + ' '
+				+ LEFT(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 2)
+				+ ':'
+				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
+				+ ':59' AS DATETIME)
+		end AS CREATION_DATE,
+		p.REQ_NUMBER,p.LINE_NBR,p.QUANTITY,p.PO_USER_FLD_4,p.REQ_LOCATION 
+		from REQLINE p 
+			where p.PO_USER_FLD_4 in ('A','B')) p
 --(select p.COMPANY, p.ITEM,p.REC_ACT_DATE,p.PO_NUMBER,p.LINE_NBR,p.QUANTITY,p.PO_USER_FLD_4,posrc.REQ_LOCATION 
 --		from POLINE p 
 --			inner join POLINESRC posrc on p.PO_NUMBER = posrc.PO_NUMBER and p.LINE_NBR = posrc.LINE_NBR 
@@ -4985,25 +5946,11 @@ inner join bluebin.DimFacility df on db.BinFacility = df.FacilityID
 inner join bluebin.DimLocation dl on db.LocationID = dl.LocationID
 inner join bluebin.DimItem di on db.ItemID = di.ItemID
 
-where CUSTOM_C1_C in ('A','B') --and QUANTITY <> CXL_QTY
+where PO_USER_FLD_4 in ('A','B') --and QUANTITY <> CXL_QTY
 and p.CREATION_DATE > getdate() -90
 --and p.REC_ACT_DATE > getdate() -90
-group by
-p.COMPANY,
-df.FacilityName,
-p.REQ_LOCATION ,
-dl.LocationName,
-p.ITEM,
-di.ItemDescription,
-db.BinSequence,
-db.BinKey,
-p.CREATION_DATE,
-p.REQ_NUMBER,
-
-p.LINE_NBR,
-p.QUANTITY,
-p.CUSTOM_C1_C
 )
+
 
 select 
 IDENTITY (INT, 1, 1) AS RecID, 
@@ -5094,13 +6041,15 @@ SELECT *  FROM #temp01
 -- where itemid = 1640 and OrderDate = '5/23/17'
 -- order by itemid, OrderDate
 
---where itemid = '5014552' 
+-- where itemid = 1640 
 -- order by itemid, LocationID
 ORDER BY BinKey, Scanseq
 
 DROP TABLE #temp01
 
+
 END
+
 
 GO
 
@@ -5113,9 +6062,10 @@ GO
 
 
 
-
-
-
 Print 'Tableau (tb) sprocs updated'
 Print 'DB: ' + DB_NAME() + ' updated'
+GO
+
+ENDSCRIPT:
+
 GO

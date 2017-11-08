@@ -64,7 +64,7 @@ from (
 					min(PODate) as FirstPODate,
 					DATEDIFF(day,min(PODate),getdate()) as Denominator
 					from tableau.Sourcing 
-					where  (PurchaseLocation is not null or PurchaseLocation <> '') --and PODate > getdate() -365 
+					where  (PurchaseLocation is not null or PurchaseLocation <> '') and getdate() -PODate > 1 
 					group by
 					Company,
 					PurchaseLocation,

@@ -430,6 +430,32 @@ CREATE TABLE [bluebin].[DimBinHistory](
 END
 GO
 
+if not exists (select * from sys.tables where name = 'BlueBinParMaster')
+BEGIN
+CREATE TABLE [bluebin].[BlueBinParMaster](
+	[ParMasterID] INT NOT NULL IDENTITY(1,1)  PRIMARY KEY,
+	[FacilityID] smallint not null,
+	[LocationID] varchar (10) NOT NULL,
+	[LocationIDOld] varchar (10) NULL,
+	[ItemID] char (32) NOT NULL,
+	[BinSequence] varchar (50) NOT NULL,
+	[BinSize] varchar(5) NULL,
+	[BinUOM] varchar (10) NULL,
+	[BinQuantity] int NULL,
+    [LeadTime] smallint NULL,
+    [ItemType] varchar (10) NULL,
+	[WHLocationID] varchar(10) null,
+	[WHSequence] varchar(50) null,
+	[PatientCharge] int not NULL,
+	[Updated] int not null,
+	[LastUpdated] datetime not null
+	
+)
+
+
+END
+GO
+
 if not exists(select * from bluebin.Config where ConfigType = 'Reports' and ConfigName like 'SC-%')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES

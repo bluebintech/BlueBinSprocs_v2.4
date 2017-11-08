@@ -14,7 +14,7 @@ DROP PROCEDURE  tb_Sourcing
 GO
 
 CREATE PROCEDURE	tb_Sourcing
---exec tb_Sourcing  select * from tableau.Sourcing
+--exec tb_Sourcing  
 AS
 
 /********************************		DROP Sourcing		**********************************/
@@ -71,8 +71,8 @@ SELECT Row_number()
 				PO_LN_DST.BUSINESS_UNIT as ShipLocation,					
 				PO_LN_DST.ACCOUNT as AcctUnit,			
 				gl.DESCR as AcctUnitName,						
-				PO_LN.DESCR254_MIXED as PODescr, -- Original   MIT.DESCR as PODescr,
-				case when PO_LN_DST.QTY_PO = '' then 0 else PO_LN_DST.QTY_PO end as QtyOrdered,
+				PO_LN.DESCR254_MIXED as PODesc, -- Original   MIT.DESCR as PODescr,
+				PO_LN_DST.QTY_PO as QtyOrdered,
 				case
 					when ISNULL(PO_LN.CANCEL_STATUS,'') IN ( 'X', 'D', 'PX') OR SHIP.RECEIPT_DTTM is NULL then 0 else PO_LN_DST.QTY_PO end as QtyReceived, --May need to add , 'C', 'PX'		
 				PO_LN.CNTRCT_ID as AgrmtRef,
@@ -82,22 +82,21 @@ SELECT Row_number()
 				case when PO_LN_DST.QTY_PO = 0 then 0 else PO_LN_DST.MERCHANDISE_AMT/PO_LN_DST.QTY_PO end as IndividualCost,					
 				DATEADD(hour,@POTimeAdjust,PO_HDR.PO_DT) as PODate,
 				--PO_HDR.PO_DT as PODate,
-				(DATEADD(day,((@POTimeAdjust/24)+convert(int,(Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime') )),PO_HDR.PO_DT)) as ExpectedDeliveryDate,				
+				(DATEADD(day,((@POTimeAdjust/24)+convert(int,(Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime') )),PO_HDR.PO_DT)) as ExpectedDeliveryDate,				--NEED
 				'' as LateDeliveryDate,					
 				SHIP.RECEIPT_DTTM as ReceivedDate,
 				SHIP.RECEIPT_DTTM as CloseDate,			
 				PO_LN_DST.LOCATION AS PurchaseLocation,
                 @Facility as PurchaseFacility,
-				case when ISNULL(PO_LN_DST.DISTRIB_LN_STATUS,'') in ('M','X','C') or ISNULL(PO_LN.CANCEL_STATUS,'') IN ( 'X', 'C') then 'Y' else 'N' end  as ClosedFlag,						
+				'' as ClosedFlag,						--NEED
 				case
-					when ISNULL(PO_LN.CANCEL_STATUS,'') IN ( 'X', 'D' , 'PX') or ISNULL(PO_LN_DST.DISTRIB_LN_STATUS,'') in ('M','X') then PO_LN_DST.QTY_PO else 0 end as QtyCancelled,	--May need to add , 'C', 'PX'					
+					when ISNULL(PO_LN.CANCEL_STATUS,'') IN ( 'X', 'D' , 'PX') then PO_LN_DST.QTY_PO else 0 end as QtyCancelled,	--May need to add , 'C', 'PX'					
 				PO_LN_DST.MERCHANDISE_AMT as POAmt,							
-				PO_LN_DST.MERCHANDISE_AMT as InvoiceAmt,
-				PO_LN_DST.LOCATION as DeliverToNew,						
+				PO_LN_DST.MERCHANDISE_AMT as InvoiceAmt,						
 				Case 
 					When PO_LN.QTY_TYPE = 'S' and PO_LN.PRICE_DT_TYPE = 'D' then 'X'
 					When PO_LN.QTY_TYPE = 'L' and PO_LN.PRICE_DT_TYPE = 'P' then 'N'  
-					else 'I' end as POItemType,						
+					else 'I' end as POItemType,						--NEED
 				0 as PPV,								
 				1 as POLine		
   
@@ -124,8 +123,8 @@ SELECT Row_number()
 				
 
 		 WHERE  PO_HDR.PO_DT >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE') 
-                AND (ISNULL(PO_LN.CANCEL_STATUS,'') NOT IN ( 'X', 'D' ) or ISNULL(PO_LN_DST.DISTRIB_LN_STATUS,'') NOT in ('M','X'))
-				AND PO_LN_DST.QTY_PO > 0
+                AND ISNULL(PO_LN.CANCEL_STATUS,'') NOT IN ( 'X', 'D' )
+
 )
 ,
 B as (
@@ -168,7 +167,6 @@ FROM   B
 LEFT JOIN bluebin.DimLocation dl on ltrim(rtrim(B.PurchaseLocation)) = ltrim(rtrim(dl.LocationID)) and ltrim(rtrim(B.PurchaseFacility)) = ltrim(rtrim(dl.LocationFacility))
 LEFT JOIN bluebin.DimFacility df on ltrim(rtrim(B.PurchaseFacility)) = ltrim(rtrim(df.FacilityID))
 LEFT JOIN (select VENDOR_ID,ITM_ID_VNDR,INV_ITEM_ID from ITM_VENDOR where ITM_STATUS = 'A') iv on B.ItemNumber = iv.INV_ITEM_ID and B.VendorCode = iv.VENDOR_ID
-where QtyOrdered > 0
 --where ItemNumber= '0761925'
 --where dl.BlueBinFlag = 1
 

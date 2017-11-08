@@ -1,3 +1,11 @@
+
+
+--/******************************************
+
+--			DimLocation
+
+--******************************************/
+
 IF EXISTS ( SELECT  *
             FROM    sys.objects
             WHERE   object_id = OBJECT_ID(N'etl_DimLocation')
@@ -31,7 +39,7 @@ AS
                                             FROM   [bluebin].[Config]
                                             WHERE  [ConfigName] = 'REQ_LOCATION'
                                                    AND Active = 1) 
-										or REQ_LOCATION in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION)
+										or convert(varchar(10),COMPANY)+'-'+REQ_LOCATION in (select convert(varchar(10),COMPANY)+'-'+REQ_LOCATION from bluebin.ALT_REQ_LOCATION)
 											)		   
 												   
 										THEN 1
@@ -43,8 +51,8 @@ AS
 		(
 		select distinct REQ_LOCATION,NAME,COMPANY,ACTIVE_STATUS FROM RQLOC
 		) a 
-	--where REQ_LOCATION like 'BB%'
-
+	--where COMPANY like '3201' and REQ_LOCATION = 'NICU'
+	
 
 GO
 

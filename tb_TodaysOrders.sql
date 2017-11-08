@@ -77,7 +77,7 @@ select
 			from bluebin.FactScan fs
 			inner join bluebin.DimBin db on fs.BinKey = db.BinKey
 			inner join bluebin.DimLocation dl on db.LocationID = dl.LocationID and dl.BlueBinFlag = 1
-			where fs.OrderDate > @TodayDate
+			where fs.OrderDate >= @TodayDate
 			group by
 			db.BinFacility,
 			db.LocationID

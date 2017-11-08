@@ -139,9 +139,9 @@ truncate table dbo.VENDOR
 END
 
 
-if exists (select * from sys.tables where name = 'REQ_LN_SHIP')
+if exists (select * from sys.tables where name = 'REQ_LINE_SHIP')
 BEGIN
-truncate table dbo.REQ_LN_SHIP
+truncate table dbo.REQ_LINE_SHIP
 END
 
 if exists (select * from sys.tables where name = 'DEPT_TBL')

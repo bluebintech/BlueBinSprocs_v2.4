@@ -342,6 +342,15 @@ GO
 
 /* END Peoplesoft COnfigs */
 
+if not exists(select * from bluebin.Config where ConfigName = 'UseClinicalDescTab')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'UseClinicalDescTab','0','1',getdate(),'Tableau','Setting for the tableau.Kanban table to override Clinical over Item Desc' 
+END
+GO
+
+
+
 if not exists(select * from bluebin.Config where ConfigName = 'ConsignmentFlag')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
@@ -635,6 +644,60 @@ Print 'Table Updates Complete'
 
 --*****************************************************
 --**************************NEWTABLE**********************
+
+if not exists (select * from sys.tables where name = 'HistoricalDimBin')
+BEGIN
+CREATE TABLE [bluebin].[HistoricalDimBin](
+	[FLI] varchar(45) NOT NULL,
+	[FacilityID] int not null,
+    [LocationID] varchar(10) NOT NULL,
+	[ItemID] varchar(32) NOT NULL,
+    [BinUOM] varchar(3) NULL,
+    [BinQty] int NULL,
+    [BinLeadTime] int NULL,
+    [BinCurrentCost] decimal (18,5) NULL,
+    [BinConsignmentFlag] varchar(1)NULL,
+    [BinGLAccount] int NULL,
+	[BaselineDate] datetime NOT NULL
+)
+
+END
+GO
+
+--*****************************************************
+--**************************NEWTABLE**********************
+
+if not exists (select * from sys.tables where name = 'HistoricalDimBinJoin')
+BEGIN
+CREATE TABLE [bluebin].[HistoricalDimBinJoin](
+	[HistoricalDimBinJoinID] int NOT NULL IDENTITY(1,1) PRIMARY KEY,
+	[FacilityID] int NOT NULL,
+	[OldLocationID] varchar(10) NOT NULL,
+	[OldLocationName] varchar(30) NOT NULL,
+	[NewLocationID] varchar(10) NOT NULL,
+	[LastUpdated] datetime NOT NULL
+)
+
+END
+GO
+
+
+
+--*****************************************************
+--**************************NEWTABLE**********************
+/****** Object:  Table [bluebin].[PeoplesoftGLAccount]     ******/
+
+if not exists (select * from sys.tables where name = 'PeoplesoftGLAccount')
+BEGIN
+CREATE TABLE [bluebin].[PeoplesoftGLAccount](
+	[ACCOUNT] varchar(10) NOT NULL,
+	[DESCR] varchar(30) NULL
+)
+END
+GO
+
+--*****************************************************
+--**************************NEWTABLE**********************
 /****** Object:  Table [bluebin].[TimeStudyStageScan]     ******/
 
 if not exists (select * from sys.tables where name = 'TimeStudyStageScan')
@@ -902,6 +965,7 @@ CREATE TABLE [bluebin].[BlueBinParMaster](
 	[ParMasterID] INT NOT NULL IDENTITY(1,1)  PRIMARY KEY,
 	[FacilityID] smallint not null,
 	[LocationID] varchar (10) NOT NULL,
+	[LocationIDOld] varchar (10) NULL,
 	[ItemID] char (32) NOT NULL,
 	[BinSequence] varchar (50) NOT NULL,
 	[BinSize] varchar(5) NULL,
@@ -3633,7 +3697,7 @@ if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAud
 drop procedure sp_SelectGembaAuditNode
 GO
 
---exec sp_SelectGembaAuditNode '%','DW001','%'
+--exec sp_SelectGembaAuditNode '%','%','%'
 
 CREATE PROCEDURE sp_SelectGembaAuditNode
 @FacilityName varchar(50),
@@ -3659,13 +3723,15 @@ SET NOCOUNT ON
     q.NIS_TotalScore as [Node Integrity Score],
 	q.SS_TotalScore as [Stage Score],
     q.TotalScore as [Total Score],
-    q.AdditionalComments as AdditionalCommentsText,
+    case when i.ImageSourceID is null then 'No' else 'Yes' end as Images,
+	q.AdditionalComments as AdditionalCommentsText,
     case when q.AdditionalComments ='' then 'No' else 'Yes' end [Addtl Comments],
     q.LastUpdated
 from [gemba].[GembaAuditNode] q
 inner join bluebin.DimFacility df on q.FacilityID = df.FacilityID
 inner join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and q.FacilityID = dl.LocationFacility and dl.BlueBinFlag = 1
 inner join [bluebin].[BlueBinUser] u on q.AuditerUserID = u.BlueBinUserID
+left join (select distinct ImageSourceID from bluebin.Image where ImageSource like 'Gemba%' and Active = 1) i on q.GembaAuditNodeID = i.ImageSourceID
     Where q.Active = 1 
 	and df.[FacilityName] LIKE '%' + @FacilityName + '%' 
 	and rtrim(dl.[LocationName]) + ' - ' +  dl.LocationID LIKE '%' + @LocationName + '%'
@@ -3676,6 +3742,7 @@ END
 GO
 grant exec on sp_SelectGembaAuditNode to appusers
 GO
+
 
 
 
@@ -8335,6 +8402,7 @@ GO
 
 
 
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -8475,9 +8543,9 @@ truncate table dbo.VENDOR
 END
 
 
-if exists (select * from sys.tables where name = 'REQ_LN_SHIP')
+if exists (select * from sys.tables where name = 'REQ_LINE_SHIP')
 BEGIN
-truncate table dbo.REQ_LN_SHIP
+truncate table dbo.REQ_LINE_SHIP
 END
 
 if exists (select * from sys.tables where name = 'DEPT_TBL')
@@ -8801,7 +8869,7 @@ Print 'Job Updates Complete'
 
 
 
-declare @version varchar(50) = '2.4.20170605' --Update Version Number here
+declare @version varchar(50) = '2.4.20171003' --Update Version Number here
 
 
 if not exists (select * from bluebin.Config where ConfigName = 'Version')

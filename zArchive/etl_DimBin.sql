@@ -28,52 +28,12 @@ END CATCH
 
 --/***************************		CREATE Temp Tables		*************************/
 
-/* Old Bin Added Dates
 SELECT REQ_LOCATION,
        Min(CREATION_DATE) AS BinAddedDate
 INTO   #BinAddDates
 FROM   REQLINE a INNER JOIN bluebin.DimLocation b ON a.REQ_LOCATION = b.LocationID
 WHERE  b.BlueBinFlag = 1
 GROUP  BY REQ_LOCATION
-*/
-
---**New Bin Added Dates
-select 
-il.LOCATION as REQ_LOCATION,
-il.ITEM,
---item.BinAddedDate,
---il.ADDED_DATE,
---loc.LocAddedDate,
---case when il.ADDED_DATE > loc.LocAddedDate then COALESCE(item.BinAddedDate,il.ADDED_DATE) else COALESCE(loc.LocAddedDate,il.ADDED_DATE) end as BinAddedDate
-case 
-	when item.BinAddedDate is null 
-	then case
-			when il.ADDED_DATE > loc.LocAddedDate 
-			then il.ADDED_DATE 
-			else COALESCE(loc.LocAddedDate,il.ADDED_DATE) end
-	else case 
-			when il.ADDED_DATE > item.BinAddedDate 
-			then item.BinAddedDate 
-			else case
-				when il.ADDED_DATE > loc.LocAddedDate 
-				then il.ADDED_DATE 
-				else COALESCE(loc.LocAddedDate,il.ADDED_DATE) end end 
-	end as BinAddedDate
-INTO   #BinAddDates
-from ITEMLOC il
-	INNER JOIN 
-	(SELECT REQ_LOCATION,
-		   Min(CREATION_DATE) AS LocAddedDate
-	FROM   REQLINE a INNER JOIN bluebin.DimLocation b ON a.REQ_LOCATION = b.LocationID
-	WHERE  b.BlueBinFlag = 1
-	GROUP  BY REQ_LOCATION) loc on il.LOCATION = loc.REQ_LOCATION 
-	LEFT JOIN 
-	(SELECT REQ_LOCATION,ITEM,
-		   Min(CREATION_DATE) AS BinAddedDate
-	FROM   REQLINE a INNER JOIN bluebin.DimLocation b ON a.REQ_LOCATION = b.LocationID
-	WHERE  b.BlueBinFlag = 1
-	GROUP  BY REQ_LOCATION,ITEM) item on il.LOCATION = item.REQ_LOCATION and il.ITEM = item.ITEM
---WHERE il.ITEM in ('1346','27305') and il.LOCATION = 'DN036' order by 2,1
 
 SELECT Row_number()
          OVER(
@@ -179,7 +139,7 @@ SELECT Row_number()
                    ON ltrim(rtrim(ITEMLOC.LOCATION)) = ltrim(rtrim(DimLocation.LocationID))
 				   AND ITEMLOC.COMPANY = DimLocation.LocationFacility			   
            INNER JOIN #BinAddDates
-                   ON ltrim(rtrim(ITEMLOC.LOCATION)) = ltrim(rtrim(#BinAddDates.REQ_LOCATION)) and ltrim(rtrim(ITEMLOC.ITEM)) = ltrim(rtrim(#BinAddDates.ITEM))
+                   ON ltrim(rtrim(ITEMLOC.LOCATION)) = ltrim(rtrim(#BinAddDates.REQ_LOCATION))
            LEFT JOIN #ItemReqs
                   ON ITEMLOC.ITEM = #ItemReqs.ITEM
                      AND ITEMLOC.UOM = #ItemReqs.ENTERED_UOM
@@ -206,11 +166,7 @@ DROP TABLE #ItemAccounts
 DROP TABLE #ItemStore
 DROP TABLE #Consignment
 
-
-
 GO
-
-
 
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()

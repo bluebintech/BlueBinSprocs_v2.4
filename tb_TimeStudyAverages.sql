@@ -38,7 +38,7 @@ LocationID,
 LocationName,
 ISNULL(SUM(Scan),0) as TodaysLines 
 from tableau.Kanban
-where [Date] = (select max(Date) from tableau.Kanban) 
+where [Date] = (select max(Date) from tableau.Kanban where Scan = 1) 
 group by 
 [Date],
 FacilityID,
@@ -57,7 +57,7 @@ LocationID,
 LocationName,
 ISNULL(SUM(Scan),0) as Picks  
 from tableau.Kanban
-where [Date] = (select max(Date) from tableau.Kanban) and ItemType in ('I','MSR')
+where [Date] = (select max(Date) from tableau.Kanban where Scan = 1) and ItemType in ('I','MSR')
 group by 
 [Date],
 FacilityID,
@@ -77,7 +77,7 @@ LocationID,
 LocationName,
 ISNULL(SUM(StockOut),0) as StockOuts  
 from tableau.Kanban
-where [Date] = (select max(Date) from tableau.Kanban)
+where [Date] = (select max(Date) from tableau.Kanban where Scan = 1)
 group by 
 [Date],
 FacilityID,
