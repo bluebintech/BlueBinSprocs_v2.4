@@ -20,12 +20,14 @@ CREATE PROCEDURE etl_DimFacility
 AS
 
 
+
 /*********************		POPULATE/update DimFacility	****************************/
 if not exists (select * from sys.tables where name = 'DimFacility')
 BEGIN
 CREATE TABLE [bluebin].[DimFacility](
 	[FacilityID] INT NOT NULL ,
-	[FacilityName] varchar (50) NOT NULL
+	[FacilityName] varchar (50) NOT NULL,
+	[PSFacilityName] varchar (30) NULL
 )
 ;
 declare @DefaultFacility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
@@ -35,12 +37,30 @@ BEGIN
 INSERT INTO bluebin.DimFacility 
 --declare @DefaultFacility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
 
-select @DefaultFacility,a.SETID
+select 
+@DefaultFacility,
+a.BUSINESS_UNIT,
+bu.DESCR
 from
-	(select distinct SETID from LOCATION_TBL) a
+	(select distinct BUSINESS_UNIT from CART_CT_INF_INV) a
+	left join dbo.BUS_UNIT_TBL_FS bu on a.BUSINESS_UNIT = bu.BUSINESS_UNIT
 	where @DefaultFacility not in (select FacilityID from bluebin.DimFacility)
-	
+
 END 
+ELSE
+BEGIN
+INSERT INTO bluebin.DimFacility 
+select 
+ROW_NUMBER() OVER (ORDER BY a.BUSINESS_UNIT),
+a.BUSINESS_UNIT,
+bu.DESCR
+from
+	(select distinct BUSINESS_UNIT from CART_CT_INF_INV) a
+	left join dbo.BUS_UNIT_TBL_FS bu on a.BUSINESS_UNIT = bu.BUSINESS_UNIT
+	where @DefaultFacility not in (select FacilityID from bluebin.DimFacility)
+	and a.BUSINESS_UNIT not in (select FacilityName from bluebin.DimFacility)
+END
+
 END
 GO
 

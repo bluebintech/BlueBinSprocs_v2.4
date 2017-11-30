@@ -16,10 +16,11 @@ CREATE PROCEDURE tb_OldParValuation
 
 AS
 
-
---select top 10* from bluebin.HistoricalDimBin
---select top 10* from bluebin.DimBin
---select * from bluebin.HistoricalDimBinJoin
+/*
+select top 10* from bluebin.HistoricalDimBin
+select top 10* from bluebin.DimBin
+select * from bluebin.HistoricalDimBinJoin
+*/
 
 With A as
 (
@@ -43,7 +44,7 @@ from		(
 						select Company,PurchaseLocation,ItemNumber,BuyUOM,Avg(UnitCost) AvgCost from tableau.Sourcing
 						where PurchaseLocation is not null
 						group by Company,PurchaseLocation,ItemNumber,BuyUOM) p on i.BinFacility = p.Company and i.LocationID = p.PurchaseLocation and i.ItemID = p.ItemNumber and i.BinUOM = p.BuyUOM
-			right join bluebin.HistoricalDimBinJoin lj on i.LocationID = lj.NewLocationID
+			right join (select hdbj.*,dl.LocationName as NewLocationName from bluebin.HistoricalDimBinJoin hdbj left join bluebin.DimLocation dl on hdbj.NewLocationID = dl.LocationID) lj on i.LocationID = lj.NewLocationID
 			) i
 full outer join 
 			( 
@@ -52,7 +53,7 @@ full outer join
 						select Company,PurchaseLocation,ItemNumber,BuyUOM,Avg(UnitCost) AvgCost from tableau.Sourcing
 						where PurchaseLocation is not null
 						group by Company,PurchaseLocation,ItemNumber,BuyUOM) p on i.FacilityID = p.Company and i.LocationID = p.PurchaseLocation and i.ItemID = p.ItemNumber and i.BinUOM = p.BuyUOM
-			right join bluebin.HistoricalDimBinJoin lj on i.LocationID = lj.OldLocationID
+			right join (select hdbj.*,dl.LocationName as NewLocationName from bluebin.HistoricalDimBinJoin hdbj left join bluebin.DimLocation dl on hdbj.NewLocationID = dl.LocationID) lj on i.LocationID = lj.OldLocationID
 			) i2 on i.NewLocationID = i2.NewLocationID and i.ItemID = i2.ItemID
 
 )

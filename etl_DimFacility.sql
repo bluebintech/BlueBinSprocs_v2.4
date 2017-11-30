@@ -20,14 +20,16 @@ if not exists (select * from sys.tables where name = 'DimFacility')
 BEGIN
 CREATE TABLE [bluebin].[DimFacility](
 	[FacilityID] INT NOT NULL ,
-	[FacilityName] varchar (50) NOT NULL
+	[FacilityName] varchar (50) NOT NULL,
+	[PSFacilityName] varchar (30) NULL
 )
 ;
 
 INSERT INTO bluebin.DimFacility 
 	SELECT
 	COMPANY as FacilityID,
-	NAME as FacilityName
+	NAME as FacilityName,
+	'' as PSFacilityName
 
     FROM   dbo.APCOMPANY a
 	left join bluebin.DimFacility df on a.COMPANY = df.FacilityID 
@@ -39,7 +41,8 @@ END
     INSERT INTO bluebin.DimFacility 
 	SELECT
 	COMPANY as FacilityID,
-	NAME as FacilityName
+	NAME as FacilityName,
+	'' as PSFacilityName
 
     FROM   dbo.APCOMPANY a
 	left join bluebin.DimFacility df on a.COMPANY = df.FacilityID 

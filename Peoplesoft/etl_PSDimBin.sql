@@ -40,7 +40,8 @@ SELECT Row_number()
          OVER(
            ORDER BY Locations.LOCATION, Bins.INV_ITEM_ID) AS BinKey,
        --Bins.INV_CART_ID                                 AS CartID,
-	   case when @Facility is not null or @Facility <> '' then @Facility else ''end	as BinFacility,
+	   COALESCE(df.FacilityID,@Facility,0) as BinFacility,
+	   --case when @Facility is not null or @Facility <> '' then @Facility else ''end	as BinFacility,
        Bins.INV_ITEM_ID                                 AS ItemID,
        Locations.LOCATION                               AS LocationID,
        Bins.COMPARTMENT                                 AS BinSequence,
@@ -79,6 +80,7 @@ INTO   bluebin.DimBin
 FROM   
 	(
 	select distinct 
+	c.BUSINESS_UNIT,
 	c.INV_CART_ID, 
 	c.INV_ITEM_ID,
 	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end as COMPARTMENT,
@@ -86,12 +88,14 @@ FROM
 	c.UNIT_OF_MEASURE
 	
 	 from dbo.CART_TEMPL_INV c
-	 inner join (select INV_CART_ID, INV_ITEM_ID, max(ISNULL(COUNT_ORDER,1)) as COUNT_ORDER from CART_TEMPL_INV where COUNT_ORDER is not null 
+	 inner join (select INV_CART_ID, INV_ITEM_ID, max(ISNULL(COUNT_ORDER,1)) as COUNT_ORDER from CART_TEMPL_INV 
+	 --where COUNT_ORDER != 2
 	 --and LEN(COMPARTMENT) >=6 
 	 group by INV_CART_ID, INV_ITEM_ID) a 
 		on c.INV_CART_ID = a.INV_CART_ID and c.INV_ITEM_ID = a.INV_ITEM_ID and ISNULL(c.COUNT_ORDER,1) = a.COUNT_ORDER
 	 --where c.INV_ITEM_ID = '1446' and c.INV_CART_ID = 'L0153'
 	 group by 
+	 c.BUSINESS_UNIT,
 	 c.INV_CART_ID, 
 	c.INV_ITEM_ID,
 	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end,
@@ -125,7 +129,7 @@ FROM
 					group by a.BUSINESS_UNIT,a.CONSIGNED_FLAG,a.INV_ITEM_ID) bu on m.INV_ITEM_ID = bu.INV_ITEM_ID and bu.BUSINESS_UNIT in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
 
 			) bu on Bins.INV_ITEM_ID = bu.INV_ITEM_ID
-
+			LEFT JOIN bluebin.DimFacility df on Bins.BUSINESS_UNIT COLLATE DATABASE_DEFAULT = df.FacilityName
 WHERE  
 		
 		dl.BlueBinFlag = 1 and

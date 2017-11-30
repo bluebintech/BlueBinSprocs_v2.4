@@ -12,6 +12,7 @@ DROP PROCEDURE  etl_DimLocation
 GO
 --exec etl_DimLocation
 --select * from bluebin.DimLocation where BlueBinFlag = 1
+--select count(*),sum(BlueBinFlag) from bluebin.DimLocation
 
 CREATE PROCEDURE etl_DimLocation
 AS
@@ -34,7 +35,8 @@ AS
            ORDER BY a.LOCATION) AS LocationKey,
        a.LOCATION            AS LocationID,
        UPPER(DESCR)          AS LocationName,
-	   case when @Facility is not null or @Facility <> '' then @Facility else df.FacilityID	end AS LocationFacility,
+	   COALESCE(df.FacilityID,@Facility,0) AS LocationFacility,
+	   --case when @Facility = '' or @Facility is null then df.FacilityID else @Facility end AS LocationFacility,
 		CASE
              WHEN a.EFF_STATUS = 'A' and (
 											LEFT(a.LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] 
@@ -48,12 +50,16 @@ AS
              ELSE 0
            END                        AS BlueBinFlag,
 		   a.EFF_STATUS as ACTIVE_STATUS
-INTO bluebin.DimLocation
+		   
+INTO bluebin.DimLocation 
 FROM   dbo.LOCATION_TBL a 
 INNER JOIN (SELECT LOCATION, MIN(EFFDT) AS EFFDT FROM dbo.LOCATION_TBL where EFF_STATUS = 'A'  GROUP BY LOCATION) b ON a.LOCATION  = b.LOCATION AND a.EFFDT = b.EFFDT 
-LEFT JOIN bluebin.DimFacility df on a.SETID COLLATE DATABASE_DEFAULT = df.FacilityName
+LEFT JOIN 
+	(select BUSINESS_UNIT,LOCATION from CART_ATTRIB_INV group by BUSINESS_UNIT,LOCATION) c on a.LOCATION = c.LOCATION
+LEFT JOIN bluebin.DimFacility df on c.BUSINESS_UNIT COLLATE DATABASE_DEFAULT = df.FacilityName
+WHERE  a.EFF_STATUS = 'A'  --and a.DESCR like 'BB%'
 
-WHERE  a.EFF_STATUS = 'A'
+
 
 GO
 

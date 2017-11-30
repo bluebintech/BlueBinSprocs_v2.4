@@ -435,6 +435,7 @@ if not exists(select * from bluebin.Config where ConfigType = 'Reports' and Conf
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
 ('OP-Bin Sequence','0',1,getdate(),'Reports','Setting for whether to display the Bin Sequence Report'),
+('OP-CMR','0',1,getdate(),'Reports','Setting for whether to display Clinical Management Report'),
 ('OP-Stat Calls Detail','0',1,getdate(),'Reports','Setting for whether to display the Stat Calls Detail'),
 ('OP-Node Scorecard','0',1,getdate(),'Reports','Setting for whether to display the Node Scorecard'),
 ('OP-Gemba Auditor Details','0',1,getdate(),'Reports','Setting for whether to display the Gemba Auditor Details'),
@@ -615,6 +616,7 @@ GO
 if not exists(select * from bluebin.Config where ConfigName like 'MENU-Dashboard-%')  
 BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,ConfigType,Active,LastUpdated,[Description]) VALUES
+('MENU-Dashboard-CMR','1','DMS',1,getdate(),''),
 ('MENU-Dashboard-HuddleBoard','1','DMS',1,getdate(),''),
 ('MENU-Dashboard-SupplyChain','1','DMS',1,getdate(),''),
 ('MENU-Dashboard-Sourcing','1','DMS',1,getdate(),''),
@@ -2959,8 +2961,8 @@ if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectQCN') an
 drop procedure sp_SelectQCN
 GO
 
---select * from qcn.QCN
---exec sp_SelectQCN '%','%','%','0','%'
+--select replace(q.ManuNumName, char(9), ''),* from qcn.QCN where QCNID = '9494'
+--exec sp_SelectQCN '%','%','%','1','%'
 CREATE PROCEDURE sp_SelectQCN
 @FacilityName varchar(50)
 ,@LocationName varchar(50)
@@ -2996,16 +2998,20 @@ select
     ISNULL(v.[Title],'') as AssignedTitleName,
 	qt.Name as QCNType,
 q.[ItemID],
-q.ClinicalDescription as ItemClinicalDescription,
+replace(q.ClinicalDescription, char(9), '') as ItemClinicalDescription,
 q.Par,
 q.UOM,
-q.ManuNumName,
-	q.[Details] as [DetailsText],
+replace(q.ManuNumName, char(9), '') as ManuNumName,
+	replace(replace(q.[Details], char(13), ''), char(10), '') as [DetailsText],
             case when q.[Details] ='' then 'No' else 'Yes' end Details,
-	q.[Updates] as [UpdatesText],
+	replace(replace(q.[Updates], char(13), ''), char(10), '') as [UpdatesText],
             case when q.[Updates] ='' then 'No' else 'Yes' end Updates,
-	case when qs.Status in ('Rejected','Completed') then convert(int,(q.[DateCompleted] - q.[DateEntered]))
-		else convert(int,(getdate() - q.[DateEntered])) end as DaysOpen,
+	case when 
+	ISNULL((case when qs.Status in ('Rejected','Completed') then convert(int,(q.[DateCompleted] - q.[DateEntered]))
+		else convert(int,(getdate() - q.[DateEntered])) end),0) < 0 then 0 else
+		ISNULL((case when qs.Status in ('Rejected','Completed') then convert(int,(q.[DateCompleted] - q.[DateEntered]))
+		else convert(int,(getdate() - q.[DateEntered])) end),0)
+		end as DaysOpen,
             q.[DateEntered],
 	q.[DateCompleted],
 	qs.Status,
@@ -8869,7 +8875,7 @@ Print 'Job Updates Complete'
 
 
 
-declare @version varchar(50) = '2.4.20171003' --Update Version Number here
+declare @version varchar(50) = '2.4.20171123' --Update Version Number here
 
 
 if not exists (select * from bluebin.Config where ConfigName = 'Version')

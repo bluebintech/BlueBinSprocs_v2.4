@@ -517,7 +517,6 @@ GO
 					DimLocation
 
 ********************************************************************/
-
 IF EXISTS ( SELECT  *
             FROM    sys.objects
             WHERE   object_id = OBJECT_ID(N'etl_DimLocation')
@@ -527,6 +526,7 @@ DROP PROCEDURE  etl_DimLocation
 GO
 --exec etl_DimLocation
 --select * from bluebin.DimLocation where BlueBinFlag = 1
+--select count(*),sum(BlueBinFlag) from bluebin.DimLocation
 
 CREATE PROCEDURE etl_DimLocation
 AS
@@ -549,7 +549,8 @@ AS
            ORDER BY a.LOCATION) AS LocationKey,
        a.LOCATION            AS LocationID,
        UPPER(DESCR)          AS LocationName,
-	   case when @Facility is not null or @Facility <> '' then @Facility else df.FacilityID	end AS LocationFacility,
+	   COALESCE(df.FacilityID,@Facility,0) AS LocationFacility,
+	   --case when @Facility = '' or @Facility is null then df.FacilityID else @Facility end AS LocationFacility,
 		CASE
              WHEN a.EFF_STATUS = 'A' and (
 											LEFT(a.LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] 
@@ -563,18 +564,23 @@ AS
              ELSE 0
            END                        AS BlueBinFlag,
 		   a.EFF_STATUS as ACTIVE_STATUS
-INTO bluebin.DimLocation
+		   
+INTO bluebin.DimLocation 
 FROM   dbo.LOCATION_TBL a 
-INNER JOIN (SELECT LOCATION, MIN(EFFDT) AS EFFDT FROM dbo.LOCATION_TBL where EFF_STATUS = 'A' GROUP BY LOCATION) b ON a.LOCATION  = b.LOCATION AND a.EFFDT = b.EFFDT 
-LEFT JOIN bluebin.DimFacility df on a.SETID COLLATE DATABASE_DEFAULT = df.FacilityName
+INNER JOIN (SELECT LOCATION, MIN(EFFDT) AS EFFDT FROM dbo.LOCATION_TBL where EFF_STATUS = 'A'  GROUP BY LOCATION) b ON a.LOCATION  = b.LOCATION AND a.EFFDT = b.EFFDT 
+LEFT JOIN 
+	(select BUSINESS_UNIT,LOCATION from CART_ATTRIB_INV group by BUSINESS_UNIT,LOCATION) c on a.LOCATION = c.LOCATION
+LEFT JOIN bluebin.DimFacility df on c.BUSINESS_UNIT COLLATE DATABASE_DEFAULT = df.FacilityName
+WHERE  a.EFF_STATUS = 'A'  --and a.DESCR like 'BB%'
 
-WHERE  a.EFF_STATUS = 'A'
+
 
 GO
 
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimLocation'
+
 GO
 
 
@@ -721,6 +727,64 @@ GO
 
 /***********************************************************
 
+			DimBinNotManaged
+
+***********************************************************/
+
+IF EXISTS ( SELECT  *
+            FROM    sys.objects
+            WHERE   object_id = OBJECT_ID(N'etl_DimBinNotManaged')
+                    AND type IN ( N'P', N'PC' ) ) 
+
+DROP PROCEDURE  etl_DimBinNotManaged
+GO
+
+CREATE PROCEDURE etl_DimBinNotManaged
+
+AS
+
+--exec etl_DimBinNotManaged 
+--Select * from bluebin.DimBinNotManaged
+/***************************		DROP DimBinNotManaged		********************************/
+BEGIN TRY
+    DROP TABLE bluebin.DimBinNotManaged
+END TRY
+
+BEGIN CATCH
+END CATCH
+
+
+/***********************************		CREATE	DimBinNotManaged		***********************************/
+
+SELECT 
+		   '' as FLI,
+		   '' as FacilityID,
+           '' as LocationID,
+		   '' as ItemID,
+           '' as BinUOM,
+           '' as BinQty,
+           '' as BinLeadTime,
+           '' as BinCurrentCost,
+           '' as BinConsignmentFlag,
+           '' as BinGLAccount,
+		   '' as [BaselineDate]
+		   
+    INTO bluebin.DimBinNotManaged
+
+	
+
+
+
+GO
+
+UPDATE etl.JobSteps
+SET LastModifiedDate = GETDATE()
+WHERE StepName = 'DimBinNotManaged'
+
+
+
+/***********************************************************
+
 			DimBin
 
 ***********************************************************/
@@ -761,7 +825,8 @@ SELECT Row_number()
          OVER(
            ORDER BY Locations.LOCATION, Bins.INV_ITEM_ID) AS BinKey,
        --Bins.INV_CART_ID                                 AS CartID,
-	   case when @Facility is not null or @Facility <> '' then @Facility else ''end	as BinFacility,
+	   COALESCE(df.FacilityID,@Facility,0) as BinFacility,
+	   --case when @Facility is not null or @Facility <> '' then @Facility else ''end	as BinFacility,
        Bins.INV_ITEM_ID                                 AS ItemID,
        Locations.LOCATION                               AS LocationID,
        Bins.COMPARTMENT                                 AS BinSequence,
@@ -800,6 +865,7 @@ INTO   bluebin.DimBin
 FROM   
 	(
 	select distinct 
+	c.BUSINESS_UNIT,
 	c.INV_CART_ID, 
 	c.INV_ITEM_ID,
 	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end as COMPARTMENT,
@@ -807,12 +873,14 @@ FROM
 	c.UNIT_OF_MEASURE
 	
 	 from dbo.CART_TEMPL_INV c
-	 inner join (select INV_CART_ID, INV_ITEM_ID, max(ISNULL(COUNT_ORDER,1)) as COUNT_ORDER from CART_TEMPL_INV where COUNT_ORDER is not null 
+	 inner join (select INV_CART_ID, INV_ITEM_ID, max(ISNULL(COUNT_ORDER,1)) as COUNT_ORDER from CART_TEMPL_INV 
+	 --where COUNT_ORDER != 2
 	 --and LEN(COMPARTMENT) >=6 
 	 group by INV_CART_ID, INV_ITEM_ID) a 
 		on c.INV_CART_ID = a.INV_CART_ID and c.INV_ITEM_ID = a.INV_ITEM_ID and ISNULL(c.COUNT_ORDER,1) = a.COUNT_ORDER
 	 --where c.INV_ITEM_ID = '1446' and c.INV_CART_ID = 'L0153'
 	 group by 
+	 c.BUSINESS_UNIT,
 	 c.INV_CART_ID, 
 	c.INV_ITEM_ID,
 	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end,
@@ -846,7 +914,7 @@ FROM
 					group by a.BUSINESS_UNIT,a.CONSIGNED_FLAG,a.INV_ITEM_ID) bu on m.INV_ITEM_ID = bu.INV_ITEM_ID and bu.BUSINESS_UNIT in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
 
 			) bu on Bins.INV_ITEM_ID = bu.INV_ITEM_ID
-
+			LEFT JOIN bluebin.DimFacility df on Bins.BUSINESS_UNIT COLLATE DATABASE_DEFAULT = df.FacilityName
 WHERE  
 		
 		dl.BlueBinFlag = 1 and
@@ -869,6 +937,9 @@ SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimBin'
 
 GO
+
+
+
 
 
 
@@ -1906,12 +1977,14 @@ CREATE PROCEDURE etl_DimFacility
 AS
 
 
+
 /*********************		POPULATE/update DimFacility	****************************/
 if not exists (select * from sys.tables where name = 'DimFacility')
 BEGIN
 CREATE TABLE [bluebin].[DimFacility](
 	[FacilityID] INT NOT NULL ,
-	[FacilityName] varchar (50) NOT NULL
+	[FacilityName] varchar (50) NOT NULL,
+	[PSFacilityName] varchar (30) NULL
 )
 ;
 declare @DefaultFacility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
@@ -1921,12 +1994,30 @@ BEGIN
 INSERT INTO bluebin.DimFacility 
 --declare @DefaultFacility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
 
-select @DefaultFacility,a.SETID
+select 
+@DefaultFacility,
+a.BUSINESS_UNIT,
+bu.DESCR
 from
-	(select distinct SETID from LOCATION_TBL) a
+	(select distinct BUSINESS_UNIT from CART_CT_INF_INV) a
+	left join dbo.BUS_UNIT_TBL_FS bu on a.BUSINESS_UNIT = bu.BUSINESS_UNIT
 	where @DefaultFacility not in (select FacilityID from bluebin.DimFacility)
-	
+
 END 
+ELSE
+BEGIN
+INSERT INTO bluebin.DimFacility 
+select 
+ROW_NUMBER() OVER (ORDER BY a.BUSINESS_UNIT),
+a.BUSINESS_UNIT,
+bu.DESCR
+from
+	(select distinct BUSINESS_UNIT from CART_CT_INF_INV) a
+	left join dbo.BUS_UNIT_TBL_FS bu on a.BUSINESS_UNIT = bu.BUSINESS_UNIT
+	where @DefaultFacility not in (select FacilityID from bluebin.DimFacility)
+	and a.BUSINESS_UNIT not in (select FacilityName from bluebin.DimFacility)
+END
+
 END
 GO
 
@@ -2362,7 +2453,7 @@ SELECT
 '' AS Location,
 '' AS LocationName,
        1               AS LineCount,
-	   as NAME
+''	   as NAME
 
 
 
@@ -4904,6 +4995,49 @@ END
 GO
 grant exec on tb_WarehouseHistory to public
 GO
+
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_SupplyStandards') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_SupplyStandards
+GO
+
+--exec tb_SupplyStandards
+
+
+CREATE PROCEDURE tb_SupplyStandards
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+;
+
+
+
+select 
+'' as FacilityID,
+'' as FacilityName,
+'' as PONumber,
+'' as AcctUnit,
+'' as AcctUnitName,
+'' as ItemID,
+'' as ItemClinicalDescription,
+'' as Category,
+'' as POAmt,
+'' as POs
+
+
+
+END
+GO
+grant exec on tb_SupplyStandards to public
+GO
+
+
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau

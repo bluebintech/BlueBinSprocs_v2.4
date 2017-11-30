@@ -801,6 +801,134 @@ WHERE StepName = 'FactActivityTimes'
 
 GO
 
+/***********************************************************
+
+			DimBinNotManaged
+
+***********************************************************/
+
+IF EXISTS ( SELECT  *
+            FROM    sys.objects
+            WHERE   object_id = OBJECT_ID(N'etl_DimBinNotManaged')
+                    AND type IN ( N'P', N'PC' ) ) 
+
+DROP PROCEDURE  etl_DimBinNotManaged
+GO
+
+CREATE PROCEDURE etl_DimBinNotManaged
+
+AS
+
+--exec etl_DimBinNotManaged 
+--Select * from bluebin.DimBinNotManaged
+/***************************		DROP DimBinNotManaged		********************************/
+BEGIN TRY
+    DROP TABLE bluebin.DimBinNotManaged
+END TRY
+
+BEGIN CATCH
+END CATCH
+
+
+/***********************************		CREATE	DimBinNotManaged		***********************************/
+
+SELECT 
+		   rtrim(ltrim(convert(varchar(10),i.COMPANY))) +'-' + rtrim(ltrim(convert(varchar(10),i.LOCATION))) + '-' + rtrim(ltrim(convert(varchar(10),i.ITEM))) AS FLI,
+		   i.COMPANY AS FacilityID,
+           i.LOCATION AS LocationID,
+		   i.ITEM AS ItemID,
+           UOM AS BinUOM,
+           REORDER_POINT AS BinQty,
+           CASE
+             WHEN LEADTIME_DAYS = 0 or LEADTIME_DAYS is null THEN (Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime')
+             ELSE LEADTIME_DAYS
+           END  AS BinLeadTime,
+           COALESCE(COALESCE(ItemReqs.UNIT_COST, ItemOrders.ENT_UNIT_CST), ItemStore.LAST_ISS_COST) AS BinCurrentCost,
+           CASE
+			 WHEN UPPER(ltrim(rtrim(i.USER_FIELD1))) in (Select ConfigValue from bluebin.Config where ConfigName = 'ConsignmentFlag') OR Consignment.CONSIGNMENT_FL = 'Y'  THEN 'Y'
+             ELSE 'N'
+           END  AS BinConsignmentFlag,
+           ItemAccounts.ISS_ACCOUNT AS BinGLAccount,
+		   getdate() as [BaselineDate]
+		   --'2017-05-03 00:00:00' as [BaselineDate]
+    INTO bluebin.DimBinNotManaged
+    FROM   ITEMLOC i			   
+           LEFT JOIN (
+					SELECT Row_number() 
+								OVER(
+									Partition BY ITEM, ENTERED_UOM
+									ORDER BY CREATION_DATE DESC) AS Itemreqseq,
+					ITEM,
+					ENTERED_UOM,
+					UNIT_COST
+					FROM   REQLINE a 
+					) ItemReqs
+						ON i.ITEM = ItemReqs.ITEM
+						AND i.UOM = ItemReqs.ENTERED_UOM
+						AND ItemReqs.Itemreqseq = 1
+           LEFT JOIN (
+					SELECT Row_number()
+							 OVER(
+							   Partition BY ITEM, ENT_BUY_UOM
+							   ORDER BY PO_NUMBER DESC) AS ItemOrderSeq,
+						   ITEM,
+						   ENT_BUY_UOM,
+						   ENT_UNIT_CST
+					FROM   POLINE
+					WHERE  ITEM_TYPE IN ( 'I', 'N' )		   
+				) ItemOrders
+                  ON i.ITEM = ItemOrders.ITEM
+                     AND i.UOM = ItemOrders.ENT_BUY_UOM
+                     AND ItemOrders.ItemOrderSeq = 1
+		   LEFT JOIN (
+					SELECT distinct a.ITEM,
+							--a.GL_CATEGORY,
+							max(b.ISS_ACCOUNT) as ISS_ACCOUNT--,a.LOCATION
+					FROM   ITEMLOC a 
+							LEFT JOIN ICCATEGORY b
+									ON a.GL_CATEGORY = b.GL_CATEGORY
+										AND a.LOCATION = b.LOCATION
+					WHERE  
+					a.LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') 
+					and a.ACTIVE_STATUS = 'A' 
+					group by a.ITEM		   
+		   
+			) ItemAccounts
+                  ON i.ITEM = ItemAccounts.ITEM
+           LEFT JOIN (
+					SELECT distinct 
+					i.ITEM,
+					c.LAST_ISS_COST
+					FROM   ITEMLOC i
+					left join (select ITEMLOC.ITEM,max(ITEMLOC.LAST_ISS_COST) as LAST_ISS_COST from ITEMLOC
+									inner join (select ITEM,max(LAST_ISSUE_DT) as t from ITEMLOC group by ITEM) cost on ITEMLOC.ITEM = cost.ITEM and ITEMLOC.LAST_ISSUE_DT = cost.t
+									group by ITEMLOC.ITEM ) c on i.ITEM = c.ITEM
+					WHERE  i.LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')  and i.ACTIVE_STATUS = 'A'  		   
+		   
+		   ) ItemStore
+                  ON i.ITEM = ItemStore.ITEM
+		   LEFT JOIN (
+					SELECT distinct ITEM,CONSIGNMENT_FL 
+					FROM ITEMMAST
+					WHERE  ITEM in (select ITEM from ITEMLOC where LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION'))   
+		   
+		   ) Consignment
+                  ON i.ITEM = Consignment.ITEM
+	where 
+		rtrim(ltrim(convert(varchar(10),i.COMPANY))) +'-' + rtrim(ltrim(convert(varchar(10),i.LOCATION)))  not in (select rtrim(ltrim(LocationFacility)) +'-' + rtrim(ltrim(LocationID))  from bluebin.DimLocation where BlueBinFlag = 1)
+		and rtrim(ltrim(convert(varchar(10),i.COMPANY))) +'-' + rtrim(ltrim(convert(varchar(10),i.LOCATION))) + '-' + rtrim(ltrim(convert(varchar(32),i.ITEM))) not in (select rtrim(ltrim(convert(varchar(10),BinFacility))) + '-' + LocationID + '-' + ItemID from bluebin.DimBin)
+	order by 1
+	
+
+
+
+GO
+
+UPDATE etl.JobSteps
+SET LastModifiedDate = GETDATE()
+WHERE StepName = 'DimBinNotManaged'
+
+
 
 
 --/******************************************
@@ -2690,11 +2818,6 @@ GO
 Print 'ETL Sprocs updated'
 GO
 
-/********************************************************************
-
-					DimFacility
-
-********************************************************************/
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -2704,10 +2827,12 @@ IF EXISTS ( SELECT  *
 DROP PROCEDURE  etl_DimFacility
 GO
 
-
+--drop table bluebin.DimFacility
+--delete from bluebin.DimFacility
+--select * from bluebin.DimFacility
+--exec etl_DimFacility
 CREATE PROCEDURE etl_DimFacility
 AS
-
 
 
 /*********************		POPULATE/update DimFacility	****************************/
@@ -2715,14 +2840,16 @@ if not exists (select * from sys.tables where name = 'DimFacility')
 BEGIN
 CREATE TABLE [bluebin].[DimFacility](
 	[FacilityID] INT NOT NULL ,
-	[FacilityName] varchar (50) NOT NULL
+	[FacilityName] varchar (50) NOT NULL,
+	[PSFacilityName] varchar (30) NULL
 )
 ;
 
 INSERT INTO bluebin.DimFacility 
 	SELECT
 	COMPANY as FacilityID,
-	NAME as FacilityName
+	NAME as FacilityName,
+	'' as PSFacilityName
 
     FROM   dbo.APCOMPANY a
 	left join bluebin.DimFacility df on a.COMPANY = df.FacilityID 
@@ -2734,7 +2861,8 @@ END
     INSERT INTO bluebin.DimFacility 
 	SELECT
 	COMPANY as FacilityID,
-	NAME as FacilityName
+	NAME as FacilityName,
+	'' as PSFacilityName
 
     FROM   dbo.APCOMPANY a
 	left join bluebin.DimFacility df on a.COMPANY = df.FacilityID 
@@ -2749,8 +2877,6 @@ UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimFacility'
 GO
-
-
 
 /********************************************************************
 
@@ -5868,6 +5994,308 @@ exec etl_FactActivityTimes
 
 END
 GO
+
+
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'tb_SupplyStandards') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure tb_SupplyStandards
+GO
+
+--exec tb_SupplyStandards
+
+
+CREATE PROCEDURE tb_SupplyStandards
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+;
+
+
+
+
+With A as
+(
+
+--Managed
+select
+s.Company,
+s.PONumber,
+s.POLineNumber,
+--s.PurchaseLocation,
+s.ItemNumber as ItemID,
+di.ItemClinicalDescription,
+COALESCE(convert(varchar(15),g2.ACCT_UNIT),convert(varchar(15),g3.ACCT_UNIT),s.AcctUnit,'Unknown') as AcctUnit,
+--COALESCE(g2.DESCRIPTION,g3.DESCRIPTION,g.DESCRIPTION,'Unknown') as AcctUnitName,
+s.POAmt,
+'Managed' as Category,
+1 as POs
+from tableau.Sourcing s
+inner join bluebin.DimBin db on s.Company = db.BinFacility and s.PurchaseLocation = db.LocationID and s.ItemNumber = db.ItemID
+inner join bluebin.DimItem di on s.ItemNumber = di.ItemID
+left join GLNAMES g on s.Company = g.COMPANY and ltrim(rtrim(s.AcctUnit)) = ltrim(rtrim(g.ACCT_UNIT))
+left join (
+		select 
+		max(rh.ACCT_UNIT) as ACCT_UNIT,
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		rl.ITEM,
+		gl.DESCRIPTION
+		 from REQHEADER rh
+		 inner join REQLINE rl on rh.COMPANY = rl.COMPANY and rh.REQ_NUMBER = rl.REQ_NUMBER
+		 inner join bluebin.DimLocation dl on rl.REQ_LOCATION = dl.LocationID and dl.BlueBinFlag = 1
+		 left join GLNAMES gl on rh.COMPANY = gl.COMPANY and rh.ACCT_UNIT = gl.ACCT_UNIT and gl.ACTIVE_STATUS = 'A'
+		 group by
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		rl.ITEM,
+		gl.DESCRIPTION ) g2 on db.BinFacility = g2.COMPANY and db.LocationID = g2.REQ_LOCATION and db.ItemID = g2.ITEM
+left join (
+		select 
+		max(rh.ACCT_UNIT) as ACCT_UNIT,
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		gl.DESCRIPTION
+		 from REQHEADER rh
+		 inner join REQLINE rl on rh.COMPANY = rl.COMPANY and rh.REQ_NUMBER = rl.REQ_NUMBER
+		 inner join bluebin.DimLocation dl on rl.REQ_LOCATION = dl.LocationID and dl.BlueBinFlag = 1
+		 left join GLNAMES gl on rh.COMPANY = gl.COMPANY and rh.ACCT_UNIT = gl.ACCT_UNIT and gl.ACTIVE_STATUS = 'A'
+		 group by
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		gl.DESCRIPTION ) g3 on db.BinFacility = g3.COMPANY and db.LocationID = g3.REQ_LOCATION
+
+where PODate > getdate() -365 and (s.ItemNumber <> '' or s.ItemNumber is not null or s.POItemType <> 'X')
+group by 
+s.Company,
+s.PONumber,
+s.POLineNumber,
+--s.PurchaseLocation,
+s.ItemNumber,
+di.ItemClinicalDescription,
+COALESCE(convert(varchar(15),g2.ACCT_UNIT),convert(varchar(15),g3.ACCT_UNIT),s.AcctUnit,'Unknown'),
+--COALESCE(g2.DESCRIPTION,g3.DESCRIPTION,g.DESCRIPTION,'Unknown'),
+s.POAmt
+
+UNION  
+
+select
+db.BinFacility as Company,
+'' as PONumber,
+'' as POLineNumber,
+--s.PurchaseLocation,
+db.ItemID,
+di.ItemClinicalDescription,
+COALESCE(g2.ACCT_UNIT,g3.ACCT_UNIT,'Unknown') as AcctUnit,
+--COALESCE(g2.DESCRIPTION,g3.DESCRIPTION,'Unknown') as AcctUnitName,
+0 as POAmt,
+'Managed' as Category,
+0 as POs
+from bluebin.DimBin db 
+inner join bluebin.DimItem di on di.ItemID = db.ItemID
+left join (
+		select 
+		max(rh.ACCT_UNIT) as ACCT_UNIT,
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		rl.ITEM,
+		gl.DESCRIPTION
+		 from REQHEADER rh
+		 inner join REQLINE rl on rh.COMPANY = rl.COMPANY and rh.REQ_NUMBER = rl.REQ_NUMBER
+		 inner join bluebin.DimLocation dl on rl.REQ_LOCATION = dl.LocationID and dl.BlueBinFlag = 1
+		 left join GLNAMES gl on rh.COMPANY = gl.COMPANY and rh.ACCT_UNIT = gl.ACCT_UNIT and gl.ACTIVE_STATUS = 'A'
+		 group by
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		rl.ITEM,
+		gl.DESCRIPTION ) g2 on db.BinFacility = g2.COMPANY and db.LocationID = g2.REQ_LOCATION and db.ItemID = g2.ITEM
+left join (
+		select 
+		max(rh.ACCT_UNIT) as ACCT_UNIT,
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		gl.DESCRIPTION
+		 from REQHEADER rh
+		 inner join REQLINE rl on rh.COMPANY = rl.COMPANY and rh.REQ_NUMBER = rl.REQ_NUMBER
+		 inner join bluebin.DimLocation dl on rl.REQ_LOCATION = dl.LocationID and dl.BlueBinFlag = 1
+		 left join GLNAMES gl on rh.COMPANY = gl.COMPANY and rh.ACCT_UNIT = gl.ACCT_UNIT and gl.ACTIVE_STATUS = 'A'
+		 group by
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		gl.DESCRIPTION ) g3 on db.BinFacility = g3.COMPANY and db.LocationID = g3.REQ_LOCATION
+
+group by 
+db.BinFacility,
+db.ItemID,
+di.ItemClinicalDescription,
+COALESCE(g2.ACCT_UNIT,g3.ACCT_UNIT,'Unknown')
+--,COALESCE(g2.DESCRIPTION,g3.DESCRIPTION,'Unknown')
+
+
+
+--Not Managed Standard  
+UNION
+select
+s.Company,
+s.PONumber,
+s.POLineNumber,
+--s.PurchaseLocation,
+s.ItemNumber as ItemID,
+di.ItemClinicalDescription,
+COALESCE(s.AcctUnit,convert(varchar(15),g2.ACCT_UNIT),convert(varchar(15),g3.ACCT_UNIT),'Unknown') as AcctUnit,
+--COALESCE(g.DESCRIPTION,g2.DESCRIPTION,g3.DESCRIPTION,'Unknown') as AcctUnitName,
+s.POAmt,
+'Not Managed Standard' as Category,
+1 as POs
+from tableau.Sourcing s
+inner join bluebin.DimBinNotManaged db on s.Company = db.FacilityID and s.PurchaseLocation = db.LocationID and s.ItemNumber = db.ItemID
+left join bluebin.DimItem di on s.ItemNumber = di.ItemID
+left join GLNAMES g on s.Company = g.COMPANY and ltrim(rtrim(s.AcctUnit)) = ltrim(rtrim(g.ACCT_UNIT))
+left join (
+		select 
+		max(rh.ACCT_UNIT) as ACCT_UNIT,
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		rl.ITEM,
+		gl.DESCRIPTION
+		 from REQHEADER rh
+		 inner join REQLINE rl on rh.COMPANY = rl.COMPANY and rh.REQ_NUMBER = rl.REQ_NUMBER
+		 inner join bluebin.DimLocation dl on rl.REQ_LOCATION = dl.LocationID and dl.BlueBinFlag = 1
+		 left join GLNAMES gl on rh.COMPANY = gl.COMPANY and rh.ACCT_UNIT = gl.ACCT_UNIT and gl.ACTIVE_STATUS = 'A'
+		 group by
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		rl.ITEM,
+		gl.DESCRIPTION ) g2 on db.FacilityID = g2.COMPANY and db.LocationID = g2.REQ_LOCATION and db.ItemID = g2.ITEM
+left join (
+		select 
+		max(rh.ACCT_UNIT) as ACCT_UNIT,
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		gl.DESCRIPTION
+		 from REQHEADER rh
+		 inner join REQLINE rl on rh.COMPANY = rl.COMPANY and rh.REQ_NUMBER = rl.REQ_NUMBER
+		 inner join bluebin.DimLocation dl on rl.REQ_LOCATION = dl.LocationID and dl.BlueBinFlag = 1
+		 left join GLNAMES gl on rh.COMPANY = gl.COMPANY and rh.ACCT_UNIT = gl.ACCT_UNIT and gl.ACTIVE_STATUS = 'A'
+		 group by
+		rl.COMPANY,
+		rl.REQ_LOCATION,
+		gl.DESCRIPTION ) g3 on db.FacilityID = g3.COMPANY and db.LocationID = g3.REQ_LOCATION
+where PODate > getdate() -365 and (s.ItemNumber <> '' or s.ItemNumber is not null or s.POItemType <> 'X')
+group by 
+s.Company,
+s.PONumber,
+s.POLineNumber,
+--s.PurchaseLocation,
+s.ItemNumber,
+di.ItemClinicalDescription,
+COALESCE(s.AcctUnit,convert(varchar(15),g2.ACCT_UNIT),convert(varchar(15),g3.ACCT_UNIT),'Unknown'),
+--COALESCE(g.DESCRIPTION,g2.DESCRIPTION,g3.DESCRIPTION,'Unknown'),
+s.POAmt
+
+--Not Managed Special
+UNION
+select
+s.Company,
+s.PONumber,
+s.POLineNumber,
+--s.PurchaseLocation,
+case when s.ItemNumber = '' or s.ItemNumber is null then s.PODescr else s.ItemNumber end as ItemID,
+s.PODescr as ItemClinicalDescription,
+COALESCE(s.AcctUnit,'Unknown') as AcctUnit,
+--COALESCE(s.AcctUnitName,'Unknown') as AcctUnitName,
+s.POAmt,
+'Not Managed Special' as Category,
+1 as POs
+from tableau.Sourcing s
+where (s.ItemNumber not in (select distinct ItemID from bluebin.DimBin) or s.ItemNumber not in (select distinct ItemID from bluebin.DimBinNotManaged)) and PODate > getdate() -365 and (s.ItemNumber = '' or s.ItemNumber is null or s.POItemType = 'X') 
+group by
+s.Company,
+s.PONumber,
+s.POLineNumber,
+--s.PurchaseLocation,
+case when s.ItemNumber = '' or s.ItemNumber is null then s.PODescr else s.ItemNumber end,
+s.PODescr,
+COALESCE(s.AcctUnit,'Unknown'),
+--COALESCE(s.AcctUnitName,'Unknown'),
+s.POAmt
+
+)
+
+
+
+select 
+A.Company as FacilityID,
+df.FacilityName,
+ltrim(A.PONumber) as PONumber,
+A.AcctUnit,
+gl.DESCRIPTION as AcctUnitName,
+--A.AcctUnitName,
+case when A.Category = 'Not Managed Special' and A.ItemID = A.ItemClinicalDescription then 'N/A' else A.ItemID end as ItemID,
+A.ItemClinicalDescription,
+A.Category,
+A.POAmt,
+A.POs
+
+ from A
+ left Join bluebin.DimFacility df on A.Company = df.FacilityID
+ left join GLNAMES gl on A.Company = gl.COMPANY and A.AcctUnit = gl.ACCT_UNIT
+order by 
+A.Company,
+A.AcctUnit,
+6
+/* Below query could be used for Summed value checking
+,
+B as (
+select 
+A.Company as FacilityID,
+df.FacilityName,
+A.AcctUnit,
+A.AcctUnitName,
+--A.PurchaseLocation as LocationID,
+--dl.LocationName,
+A.Category,
+COUNT ( Distinct ItemID ) as ItemCount,
+SUM(POs) as TotalPOs,
+Sum(POAmt) as Value 
+
+from A
+left Join bluebin.DimFacility df on A.Company = df.FacilityID
+--left join bluebin.DimLocation dl on A.Company = dl.LocationFacility and A.PurchaseLocation = dl.LocationID
+
+Group By 
+A.Company,
+df.FacilityName,
+A.AcctUnit,
+A.AcctUnitName,
+--A.PurchaseLocation,
+--dl.LocationName,
+A.Category)
+
+select 
+*
+from B
+order by 
+FacilityID,
+FacilityName,
+AcctUnit,
+AcctUnitName
+--LocationID,
+--LocationName
+*/
+
+
+END
+GO
+grant exec on tb_SupplyStandards to public
+GO
+
+
 
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
