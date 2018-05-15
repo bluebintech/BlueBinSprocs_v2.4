@@ -2,7 +2,7 @@ if exists (select * from dbo.sysobjects where id = object_id(N'xp_RQ500ScanBatch
 drop procedure xp_RQ500ScanBatchS
 GO
 
---exec xp_RQ500ScanBatchS '6'
+--exec xp_RQ500ScanBatchS '1'
 
 CREATE PROCEDURE xp_RQ500ScanBatchS
 @Facility varchar(4)
@@ -45,7 +45,7 @@ update scan.ScanLine set Extract = 2 where Extract = 1
 
 
 --Create data set of all the Batches that need to be extracted
-insert into @Batch (ScanBatchID,FacilityID,LocationID,RQ500User,ScanDateTime,RQ500FromLoc,RQ500FromComp,AcctUnit) 
+--insert into @Batch (ScanBatchID,FacilityID,LocationID,RQ500User,ScanDateTime,RQ500FromLoc,RQ500FromComp,AcctUnit) 
 select 
 	sb.ScanBatchID,
 	sb.FacilityID,
@@ -166,16 +166,17 @@ With C as (
 THEEND:
 
 /*
-select * from scan.ScanBatch where Extract = 1
-select * from scan.ScanLine where Extract = 1
+delete from scan.ScanExtract
+select * from scan.ScanBatch where Extract = 0
+select * from scan.ScanLine where Extract = 0
 select * from scan.ScanExtract  delete from scan.ScanExtract where ScanBatchID = 39
 select * from bluebin.DimLocation
-update scan.ScanBatch set Extract = 1, ScanDateTime = getdate()-.25 where ScanBatchID in (10,11,12)  (39)  
-update scan.ScanLine set Extract = 1, ScanDateTime = getdate()-.25 where ScanBatchID in (10,11,12)  (39) and ScanLineID <> 110(10,11,12) 
+update scan.ScanBatch set Extract = 1 where ScanBatchID in (1)  
+update scan.ScanLine set Extract = 1 where ScanLineID in (1) 
 update scan.ScanBatch set Extract = 1 where ScanBatchID in (50,51)
 update scan.ScanLine set Extract = 1 where ScanBatchID in (50,51)
 
-exec xp_RQ500ScanBatchS ''
+exec xp_RQ500ScanBatchS '1'
 declare @ScanBatchID int 
 select @ScanBatchID = min(ScanBatchID) from scan.ScanBatch where Active = 1 and Extract = 1
 */

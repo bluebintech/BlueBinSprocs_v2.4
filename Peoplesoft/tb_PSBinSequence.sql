@@ -1,6 +1,8 @@
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
+--Updated GB 20180320  Updated the logic to show a Cart
+--Updated GB 20180307  Updated the INV_ITEM_ID pull to r and changd Facility Pull for multiple
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -29,8 +31,8 @@ SET NOCOUNT ON
 
 ;
 
-declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
+declare @Facility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
+declare @FacilityName varchar(30) = (select PSFacilityName from bluebin.DimFacility where FacilityID = @Facility)
 ;
 WITH A as
 (
@@ -57,8 +59,8 @@ p.QUANTITY as OrderQty,
 p.CUSTOM_C1_C as OrderSequence
 
 from 
-(select @Facility as COMPANY, 
-		rs.INV_ITEM_ID as ITEM,
+(select COALESCE(df.FacilityID,@Facility) as COMPANY, 
+		r.INV_ITEM_ID as ITEM,
 		rs.REQ_DT AS CREATION_DATE,
 		rs.REQ_ID as REQ_NUMBER,
 		rs.LINE_NBR,
@@ -66,7 +68,9 @@ from
 		rs.CUSTOM_C1_C,
 		po.LOCATION as REQ_LOCATION 
 		from REQ_LINE_SHIP rs
-		inner join REQ_LN_DISTRIB po on right(('0000000000' + po.REQ_ID),10) = rs.REQ_ID and po.LINE_NBR = rs.LINE_NBR  
+		inner join REQ_LN_DISTRIB po on right(('0000000000' + po.REQ_ID),10) = rs.REQ_ID and po.LINE_NBR = rs.LINE_NBR and po.BUSINESS_UNIT = rs.BUSINESS_UNIT
+		left join REQ_LINE r on right(('0000000000' + r.REQ_ID),10) = rs.REQ_ID and r.LINE_NBR = rs.LINE_NBR and r.BUSINESS_UNIT = rs.BUSINESS_UNIT
+		left join bluebin.DimFacility df on rs.BUSINESS_UNIT = df.FacilityName 
 			where CUSTOM_C1_C in ('A','B')) p
 			
 --(select p.COMPANY, p.ITEM,p.REC_ACT_DATE,p.PO_NUMBER,p.LINE_NBR,p.QUANTITY,p.PO_USER_FLD_4,posrc.REQ_LOCATION 
@@ -115,7 +119,12 @@ END AS OutOfSequenceValue,
 0 AS OutofSequenceCount,
 
 CASE
-   WHEN A.BinSequence LIKE '%CD' THEN 'Card'
+      WHEN A.BinSequence LIKE '%CD' 
+		or A.BinSequence LIKE '%CO'  
+		or A.BinSequence LIKE '%CS'  
+		or A.BinSequence LIKE '%CF' 
+		or A.BinSequence LIKE '%CP' 
+		or A.BinSequence LIKE '%CR' THEN 'Card'
    ELSE 'Bin'
 END AS BinOrCard 
 

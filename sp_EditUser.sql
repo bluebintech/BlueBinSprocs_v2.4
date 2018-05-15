@@ -1,3 +1,5 @@
+--*****************************************************
+--**************************SPROC**********************
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditUser') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_EditUser
 GO
@@ -68,9 +70,18 @@ IF (@Password = '' or @Password is null)
 	END
 
 	;
+	if @Active = 0
+	BEGIN
+	update bluebin.BlueBinResource set Active = @Active where Active = 1 and LastName +', ' + FirstName = @LastName +', ' + @FirstName 
+	END
+
+	;
 	set @message = 'User Updated - '+ @UserLogin
 	select @fakelogin = 'gbutler@bluebin.com'
 	exec sp_InsertMasterLog @fakelogin,'Users',@message,@BlueBinUserID
+
+
+
 END
 GO
 grant exec on sp_EditUser to appusers

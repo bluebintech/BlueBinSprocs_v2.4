@@ -4,6 +4,8 @@
 --			DimItem
 
 --******************************************/
+--Updated GB 20180413 Added Last Po Date, Item Vendor #
+--Updated GB 20180219 Added Expireable
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -13,7 +15,7 @@ IF EXISTS ( SELECT  *
 DROP PROCEDURE  etl_DimItem
 GO
 
---exec etl_DimItem
+--exec etl_DimItem  select count(*) from bluebin.DimItem select * from bluebin.DimItem
 CREATE PROCEDURE etl_DimItem
 
 AS
@@ -57,14 +59,15 @@ SELECT Row_number()
        b.MFG_ID                    AS ItemManufacturer,
        b.MFG_ITM_ID                AS ItemManufacturerNumber,
        d.NAME1                     AS ItemVendor,
-       c.ITM_ID_VNDR               AS ItemVendorNumber,
+       c.VENDOR_ID               AS ItemVendorNumber,
 	   
-	   ''							AS LastPODate,--****
+	   podt.PO_DT					AS LastPODate,--****
        ''							AS StockLocation,--****
-       ''							AS VendorItemNumber,--****
+       c.ITM_ID_VNDR				AS VendorItemNumber,--****
 	   UNIT_MEASURE_STD			   AS StockUOM,
        UNIT_MEASURE_STD            AS BuyUOM,
-       ''							AS PackageString--****
+       ''							AS PackageString,--****
+	   ISNULL(ex.Expireable,'') as Expireable
 INTO   bluebin.DimItem
 FROM   dbo.MASTER_ITEM_TBL a
        LEFT JOIN dbo.ITEM_MFG b
@@ -76,8 +79,9 @@ FROM   dbo.MASTER_ITEM_TBL a
        LEFT JOIN dbo.VENDOR d
               ON c.VENDOR_ID COLLATE DATABASE_DEFAULT = d.VENDOR_ID 
 	   left join BRAND_NAMES_INV bn on a.INV_ITEM_ID = bn.INV_ITEM_ID
-
---select count(*) select * from bluebin.DimItem where ItemID = '1000250'
+	   left join (select INV_ITEM_ID,ITEM_FIELD_C2 as Expireable from BU_ITEMS_INV where ITEM_FIELD_C2 = 'Y' group by INV_ITEM_ID,ITEM_FIELD_C2) ex on a.INV_ITEM_ID = ex.INV_ITEM_ID
+	   left join (select p.INV_ITEM_ID,max(hd.PO_DT) as PO_DT from PO_LINE p inner join PO_HDR hd on p.PO_ID = hd.PO_ID group by p.INV_ITEM_ID) podt on a.INV_ITEM_ID = podt.INV_ITEM_ID
+--select count(*) from bluebin.DimItem 
 GO
 --exec etl_DimItem
 

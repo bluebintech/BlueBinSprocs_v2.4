@@ -1,6 +1,7 @@
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
+--Updated GB 20180307 Altered Facility pulling based on multiple facilities
 
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_StatCallsDetail') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_StatCallsDetail
@@ -12,13 +13,16 @@ CREATE PROCEDURE [dbo].[tb_StatCallsDetail]
 AS
 BEGIN
 SET NOCOUNT ON
-declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
+
+declare @Facility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
+declare @FacilityName varchar(30) = (select PSFacilityName from bluebin.DimFacility where FacilityID = @Facility)
 
 
 SELECT
-case when @Facility is not null or @Facility <> '' then @Facility else ''end as FROM_TO_CMPY,
-case when @Facility is not null or @Facility <> '' then (select FacilityName from bluebin.DimFacility where FacilityID = @Facility) else ''end as FacilityName,
+--case when @Facility is not null or @Facility <> '' then @Facility else ''end as FROM_TO_CMPY,
+--case when @Facility is not null or @Facility <> '' then (select FacilityName from bluebin.DimFacility where FacilityID = @Facility) else ''end as FacilityName,
+COALESCE(df.FacilityID,@Facility) as FROM_TO_CMPY,
+COALESCE(df.PSFacilityName,@FacilityName) as FacilityName,
 lt.LOCATION as LocationID,
 lt.DESCR as LocationName,
 INV_ITEM_ID as ItemID,
@@ -41,6 +45,7 @@ case when ORDER_NO LIKE 'MSR%' then 'Yes' else 'No' end as WHSource
 FROM   IN_DEMAND
        INNER JOIN LOCATION_TBL lt on IN_DEMAND.LOCATION = lt.LOCATION
 	   LEFT JOIN bluebin.DimLocation dl ON lt.LOCATION = dl.LocationID
+	   LEFT JOIN bluebin.DimFacility df on IN_DEMAND.BUSINESS_UNIT= df.FacilityName
 
 WHERE  PICK_BATCH_ID = 0
        --AND BUSINESS_UNIT in (Select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
@@ -49,6 +54,8 @@ WHERE  PICK_BATCH_ID = 0
 	   and DEMAND_DATE > getdate() -90
 		--AND dl.BlueBinFlag = 1
 Group by
+df.FacilityID,
+df.PSFacilityName,
 lt.LOCATION,
 lt.DESCR,
 INV_ITEM_ID,
@@ -57,6 +64,7 @@ DEMAND_DATE,
 ORDER_INT_LINE_NO,
 ISNULL(dl.BlueBinFlag,0)
 Order by DEMAND_DATE,ORDER_NO,ORDER_INT_LINE_NO
+
 
 END
 

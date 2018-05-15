@@ -1,3 +1,8 @@
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+--Updated GB 20180322 added config for possibility of pulling in SOHQty that = 0 as well
+
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_WarehouseSize') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_WarehouseSize
 GO
@@ -10,6 +15,9 @@ CREATE PROCEDURE tb_WarehouseSize
 AS
 BEGIN
 SET NOCOUNT ON
+
+declare @WHSOHQtyMinimum int
+select @WHSOHQtyMinimum = ConfigValue from bluebin.Config where ConfigName = 'WHSOHQtyMinimum'
 
 SELECT 
        a.FacilityName,
@@ -34,7 +42,7 @@ FROM   bluebin.DimWarehouseItem a
        --        ON ltrim(rtrim(a.ItemID)) = ltrim(rtrim(ITEM)) 
 		LEFT JOIN bluebin.DimItem c
 			   ON a.ItemKey = c.ItemKey
-WHERE  SOHQty > 0 --b.DOC_TYPE = 'IS' and Year(b.TRANS_DATE) >= Year(Getdate()) - 1
+WHERE  SOHQty >= @WHSOHQtyMinimum --b.DOC_TYPE = 'IS' and Year(b.TRANS_DATE) >= Year(Getdate()) - 1
 GROUP  BY 
 a.FacilityName,
 a.LocationID,

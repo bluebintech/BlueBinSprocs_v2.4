@@ -30,13 +30,15 @@ END CATCH
 
 
 /***********************************		CREATE	DimBin		***********************************/
-declare @Facility int, @UsePriceList int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
-   select @UsePriceList = ConfigValue from bluebin.Config where ConfigName = 'PS_UsePriceList'
+declare @UsePriceList int
+declare @Facility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
+declare @FacilityName varchar(30) = (select PSFacilityName from bluebin.DimFacility where FacilityID = @Facility)
+select @UsePriceList = ConfigValue from bluebin.Config where ConfigName = 'PS_UsePriceList'
  
 
 
-SELECT Row_number()
+SELECT distinct
+		Row_number()
          OVER(
            ORDER BY Locations.LOCATION, Bins.INV_ITEM_ID) AS BinKey,
        --Bins.INV_CART_ID                                 AS CartID,
@@ -61,7 +63,7 @@ SELECT Row_number()
        Bins.UNIT_OF_MEASURE                             AS BinUOM,
        Cast(Bins.QTY_OPTIMAL AS INT)                    AS BinQty,
        convert(int,(Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime') )        AS BinLeadTime,
-	   Locations.EFFDT									AS BinGoLiveDate,
+	   COALESCE((case when Locations.EFFDT < '1910-01-01' then NULL else Locations.EFFDT end),lt2.LOC_DATE,lt.LOC_DATE)									AS BinGoLiveDate,
 	   
 		--bu.LAST_PRICE_PAID AS BinCurrentCost,
   --     bu.CONSIGNED_FLAG AS BinConsignmentFlag,
@@ -72,10 +74,10 @@ SELECT Row_number()
 			COALESCE(bu.LAST_PRICE_PAID,bu.LAST_PO_PRICE_PAID,bu.PRICE_LIST,0) 
 			end AS BinCurrentCost,
        COALESCE(bu.CONSIGNED_FLAG_BU,bu.CONSIGNED_FLAG_M,'N') AS BinConsignmentFlag,
-       '' AS BinGLAccount,
+       Bins.ACCOUNT AS BinGLAccount,
 	   'Awaiting Updated Status'						 AS BinCurrentStatus
 
-
+	   
 INTO   bluebin.DimBin
 FROM   
 	(
@@ -85,7 +87,8 @@ FROM
 	c.INV_ITEM_ID,
 	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end as COMPARTMENT,
 	c.QTY_OPTIMAL,
-	c.UNIT_OF_MEASURE
+	c.UNIT_OF_MEASURE,
+	max(ACCOUNT) as ACCOUNT
 	
 	 from dbo.CART_TEMPL_INV c
 	 inner join (select INV_CART_ID, INV_ITEM_ID, max(ISNULL(COUNT_ORDER,1)) as COUNT_ORDER from CART_TEMPL_INV 
@@ -100,12 +103,15 @@ FROM
 	c.INV_ITEM_ID,
 	case when LEN(c.COMPARTMENT) < 6 then '' else c.COMPARTMENT end,
 	c.QTY_OPTIMAL,
-	c.UNIT_OF_MEASURE ) Bins
+	c.UNIT_OF_MEASURE) Bins
 	          
 	  LEFT JOIN dbo.CART_ATTRIB_INV Carts
               ON Bins.INV_CART_ID = Carts.INV_CART_ID
-        LEFT JOIN dbo.LOCATION_TBL Locations
+        LEFT JOIN dbo.LOCATION_TBL Locations 
               ON Carts.LOCATION = Locations.LOCATION
+		LEFT JOIN (Select INV_CART_ID,min(DEMAND_DATE) as LOC_DATE from dbo.CART_CT_INF_INV where CART_COUNT_QTY > 0 AND PROCESS_INSTANCE > 0 group by INV_CART_ID) lt on Bins.INV_CART_ID = lt.INV_CART_ID 
+		LEFT JOIN (Select INV_CART_ID,INV_ITEM_ID,min(DEMAND_DATE) as LOC_DATE from dbo.CART_CT_INF_INV group by INV_CART_ID,INV_ITEM_ID) lt2 on Bins.INV_CART_ID = lt2.INV_CART_ID and Bins.INV_ITEM_ID = lt2.INV_ITEM_ID 
+				 
 		INNER JOIN bluebin.DimLocation dl
               ON Locations.LOCATION COLLATE DATABASE_DEFAULT = dl.LocationID
 		--LEFT JOIN dbo.BU_ITEMS_INV bu on Bins.INV_ITEM_ID = bu.INV_ITEM_ID  and bu.BUSINESS_UNIT in (select ConfigValue from bluebin.Config where ConfigName = 'PS_BUSINESSUNIT')
@@ -138,10 +144,26 @@ WHERE
 		or Locations.LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
 
 		--and Bins.INV_ITEM_ID = '1446' and Bins.INV_CART_ID = 'L0153'
+group by
+df.FacilityID,
+Bins.INV_ITEM_ID,
+Locations.LOCATION,
+Bins.COMPARTMENT,
+Bins.UNIT_OF_MEASURE,
+Bins.QTY_OPTIMAL,
+Locations.EFFDT,
+lt2.LOC_DATE,
+lt.LOC_DATE,
+bu.LAST_PRICE_PAID,
+bu.LAST_PO_PRICE_PAID,
+bu.PRICE_LIST,
+bu.CONSIGNED_FLAG_BU,
+bu.CONSIGNED_FLAG_M,
+Bins.ACCOUNT
 		
-		order by Locations.LOCATION,Bins.INV_ITEM_ID 
+order by 2,Locations.LOCATION,Bins.INV_ITEM_ID 
 
-
+--select count(*) from bluebin.DimBin order by LocationID,ItemID
 /*****************************************		DROP Temp Tables	**************************************/
 
 

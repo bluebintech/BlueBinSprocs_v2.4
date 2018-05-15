@@ -16,13 +16,13 @@ CREATE PROCEDURE	tb_OrderVolume
 AS
 
 SET NOCOUNT on
-declare @Facility int
-   select @Facility = ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility'
+declare @Facility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
+declare @FacilityName varchar(30) = (select PSFacilityName from bluebin.DimFacility where FacilityID = @Facility)
   
 
 select 
 k.OrderDate as CREATION_DATE,
-@Facility as COMPANY,
+df.FacilityID as COMPANY,
 df.FacilityName,
 k.LocationID as REQ_LOCATION,
 k.OrderNum as REQ_NUMBER,
@@ -30,8 +30,8 @@ k.LineNum as Lines,
 'BlueBin' as NAME,
 dl.BlueBinFlag
 from tableau.Kanban k
-inner join bluebin.DimLocation dl on @Facility = rtrim(dl.LocationFacility) and k.LocationID = dl.LocationID
-inner join bluebin.DimFacility df on @Facility = rtrim(df.FacilityID)
+inner join bluebin.DimLocation dl on  k.FacilityID = dl.LocationFacility and k.LocationID = dl.LocationID 
+inner join bluebin.DimFacility df on rtrim(dl.LocationFacility) = rtrim(df.FacilityID)
 --left join REQUESTER r on rh.REQUESTER = r.REQUESTER and rq.COMPANY = r.COMPANY
 where k.OrderDate > getdate()-15 and Scan > 0
 

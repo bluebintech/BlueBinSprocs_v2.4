@@ -58,7 +58,7 @@ COMPANY,
 		ELSE DOCUMENT 
 		END,
        LINE_NBR
---select * from ICTRANS where DOCUMENT like '%270943%'
+--select * from ICTRANS where DOCUMENT like '%834798%'
 
 SELECT COMPANY,
 	   CASE 
@@ -92,11 +92,11 @@ SELECT COMPANY,
 				+ Substring(RIGHT('00000' + CONVERT(VARCHAR, CREATION_TIME), 8), 3, 2)
 				+ ':59' AS DATETIME)
 		end AS CREATION_DATE
-INTO #REQLINE
+--INTO #REQLINE
 FROM   REQLINE
 WHERE  STATUS = 9
        AND KILL_QUANTITY = 0 
---and REQ_NUMBER like '%603585%'
+and REQ_NUMBER like '%834798%'
 
 SELECT 
 a.COMPANY,
@@ -115,20 +115,20 @@ a.COMPANY,
             + ':'
             + Substring(RIGHT('00000' + CONVERT(VARCHAR, ISNULL(b.UPDATE_TIME,'00000000')), 6), 5, 2) AS DATETIME)) AS REC_DATE
 
-INTO #POLINE
-FROM   POLINESRC a
-       LEFT JOIN PORECLINE b
+--INTO #POLINE
+FROM   POLINESRCstage a
+       LEFT JOIN PORECLINEstage b
                ON a.PO_NUMBER = b.PO_NUMBER
                   AND a.LINE_NBR = b.PO_LINE_NBR
 					AND a.COMPANY = b.COMPANY 
 
-
+where SOURCE_DOC_N like '%834798%'
 GROUP BY
 	a.COMPANY,
 	a.SOURCE_DOC_N,
 	a.SRC_LINE_NBR
 
-
+	select * from bluebin.DimFacility
 
 Select
 b.COMPANY,

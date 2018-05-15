@@ -2,6 +2,8 @@
 
 					DimLocation
 
+select * from qcn.QCN
+
 ********************************************************************/
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -10,9 +12,9 @@ IF EXISTS ( SELECT  *
 
 DROP PROCEDURE  etl_DimLocation
 GO
---exec etl_DimLocation
+--exec etl_DimLocation  sp_SelectQCN '','','','0',''  select * from qcn.QCN
 --select * from bluebin.DimLocation where BlueBinFlag = 1
---select count(*),sum(BlueBinFlag) from bluebin.DimLocation
+--select count(*),sum(BlueBinFlag) from bluebin.DimLocation   select * from bluebin.DimFacility
 
 CREATE PROCEDURE etl_DimLocation
 AS

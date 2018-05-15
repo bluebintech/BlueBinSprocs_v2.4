@@ -1,6 +1,6 @@
 --*****************************************************
 --**************************SPROC**********************
-
+--Edited 20180205 GB
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNodeEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectGembaAuditNodeEdit
 GO
@@ -23,7 +23,7 @@ select
 		,a.[AdditionalComments]
 		,a.[PS_EmptyBins]
 		,a.[PS_BackBins]
-		,a.[PS_StockOuts]
+		,a.[PS_ExpiredItems]--,a.[PS_StockOuts]
 		,a.[PS_ReturnVolume]
 		,a.[PS_NonBBT]
 		,a.[PS_OrangeCones]

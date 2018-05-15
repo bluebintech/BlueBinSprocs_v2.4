@@ -4,7 +4,7 @@
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditGembaAuditNode') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_EditGembaAuditNode
 GO
-
+--Edited 20180205 GB
 --exec sp_EditGembaAuditNode 'TEST'
 
 CREATE PROCEDURE sp_EditGembaAuditNode
@@ -14,7 +14,7 @@ CREATE PROCEDURE sp_EditGembaAuditNode
 @AdditionalComments varchar(max),
 @PS_EmptyBins int,
 @PS_BackBins int,
-@PS_StockOuts int,
+@PS_ExpiredItems int,--@PS_StockOuts int,
 @PS_ReturnVolume int,
 @PS_NonBBT int,
 @PS_OrangeCones int,
@@ -57,7 +57,7 @@ Update [gemba].[GembaAuditNode] SET
            ,[AdditionalComments] = @AdditionalComments
            ,[PS_EmptyBins] = @PS_EmptyBins
            ,[PS_BackBins] = @PS_BackBins
-           ,[PS_StockOuts] = @PS_StockOuts
+           ,[PS_ExpiredItems] = @PS_ExpiredItems--,[PS_StockOuts] = @PS_StockOuts
            ,[PS_ReturnVolume] = @PS_ReturnVolume
            ,[PS_NonBBT] = @PS_NonBBT
 		   ,[PS_OrangeCones] = @PS_OrangeCones

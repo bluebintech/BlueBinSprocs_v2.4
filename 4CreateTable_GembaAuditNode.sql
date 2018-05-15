@@ -21,7 +21,7 @@ CREATE TABLE [gemba].[GembaAuditNode](
 	[AdditionalComments] varchar(max) NULL,
     [PS_EmptyBins] int NOT NULL,
 	    [PS_BackBins] int NOT NULL,
-		    [PS_StockOuts] int NOT NULL,
+		    [PS_ExpiredItems] int NOT NULL,--[PS_StockOuts] int NOT NULL,
 			    [PS_ReturnVolume] int NOT NULL,
 				    [PS_NonBBT] int NOT NULL,
 						[PS_OrangeCones] int NOT NULL,

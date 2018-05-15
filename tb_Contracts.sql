@@ -5,7 +5,7 @@
 
 
 *******************************************************************************/
-
+--Updated GB 20180108
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -45,7 +45,12 @@ INTO   tableau.Contracts
 FROM   bluebin.DimDate
        LEFT JOIN POVAGRMTLN a
               ON EXPIRE_DT = Date 
-		LEFT JOIN APVENMAST b ON a.VENDOR = b.VENDOR
+		--LEFT JOIN APVENMAST b ON a.VENDOR = b.VENDOR 
+		LEFT JOIN (select a.VENDOR,a.VENDOR_GROUP,a.VENDOR_VNAME from APVENMAST a
+					inner join (select VENDOR,max(VENDOR_GROUP) as VENDOR_GROUP from APVENMAST  group by VENDOR) 
+						b on a.VENDOR_GROUP = b.VENDOR_GROUP and a.VENDOR = b.VENDOR) b
+			ON ltrim(rtrim(a.VENDOR)) = ltrim(rtrim(b.VENDOR))
+		
 		LEFT JOIN ITEMMAST c ON a.ITEM = c.ITEM
 		--select EFFECTIVE_DT,count(*) from POVAGRMTLN group by EFFECTIVE_DT
 GO

@@ -16,6 +16,7 @@ BEGIN
 SET NOCOUNT ON
 
 declare @Facility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
+declare @FacilityName varchar(30) = (select PSFacilityName from bluebin.DimFacility where FacilityID = @Facility)
 declare @DefaultLT int = (Select max(ConfigValue) from bluebin.Config where ConfigName = 'DefaultLeadTime')
 declare @POTimeAdjust int = (Select max(ConfigValue) from bluebin.Config where ConfigName = 'PS_POTimeAdjust')
 ;
@@ -61,7 +62,7 @@ Orders
                            AND PO_LN_DST.LINE_NBR = PO_LN.LINE_NBR
                 INNER JOIN dbo.PO_HDR
                         ON PO_LN.PO_ID = PO_HDR.PO_ID
-
+							AND PO_LN.BUSINESS_UNIT = PO_HDR.BUSINESS_UNIT
                 LEFT JOIN
 					(select PO_ID,LINE_NBR,max(RECEIPT_DTTM) as RECEIPT_DTTM from dbo.RECV_LN_SHIP group by PO_ID,LINE_NBR) SHIP
 						ON PO_LN.PO_ID = SHIP.PO_ID
@@ -70,12 +71,11 @@ Orders
     --                   ON PO_LN.PO_ID = SHIP.PO_ID
     --                      AND PO_LN.LINE_NBR = SHIP.LINE_NBR
                 LEFT JOIN FirstScans
-                       ON PO_LN.INV_ITEM_ID = FirstScans.ItemID
+                       ON RIGHT(('000000000000000000' + PO_LN.INV_ITEM_ID),18) = RIGHT(('000000000000000000' + FirstScans.ItemID),18)
                           AND PO_LN_DST.LOCATION = FirstScans.LocationID
-         WHERE   PO_LN.CANCEL_STATUS NOT IN ( 'X', 'D' )
+         WHERE   ISNULL(PO_LN.CANCEL_STATUS,'') NOT IN ( 'X', 'D' )
 
-				)
-
+				) 
 				,
 
 Lines AS (
@@ -98,39 +98,44 @@ SELECT
        LOCATION as LocationID,
        Picks.ORDER_NO as OrderNum,
        Picks.ORDER_INT_LINE_NO as LineNum,
-       Picks.SCHED_DTTM as OrderDate,
+       COALESCE(Picks.SCHED_DTTM,Picks.DEMAND_DATE) as OrderDate,
        Picks.PICK_CONFIRM_DTTM as CloseDate,
        Cast(Picks.QTY_PICKED AS INT) AS OrderQty, 
 	UNIT_OF_MEASURE as OrderUOM,
 	Picks.ACCOUNT
 
-FROM   dbo.IN_DEMAND Picks
+FROM   dbo.IN_DEMAND  Picks
 
 		LEFT JOIN FirstScans
 		ON Picks.INV_ITEM_ID = FirstScans.ItemID AND Picks.LOCATION = FirstScans.LocationID
 WHERE   (CANCEL_DTTM IS NULL  or CANCEL_DTTM < '1900-01-02')
 	   AND DEMAND_DATE >= ISNULL(FirstScanDate,'1900-01-02')
 	   )
-   
 
 
 SELECT 
-@Facility AS COMPANY,
-df.FacilityName AS FacilityName,
+COALESCE(df.FacilityID,@Facility) AS COMPANY,
+COALESCE(df.FacilityName,@FacilityName) AS FacilityName,
 l.OrderDate AS Date,
 case when dl.BlueBinFlag = 1 then 'BlueBin' else 'Non BlueBin' end AS LineType,
 ISNULL(l.ACCOUNT,'None') AS AcctUnit,
-ISNULL(gl.DESCR,'None') AS AcctUnitName,
+COALESCE(gl.DESCR,l.ACCOUNT,'None') AS AcctUnitName,
 l.LocationID AS Location,
 dl.LocationName as LocationName,
 1               AS LineCount,
 '' as NAME
 from Lines l
-inner join bluebin.DimLocation dl on @Facility = rtrim(dl.LocationFacility) and l.LocationID = dl.LocationID
-inner join bluebin.DimFacility df on @Facility = rtrim(df.FacilityID)
+inner join bluebin.DimLocation dl on  l.LocationID = dl.LocationID
+inner join bluebin.DimFacility df on rtrim(dl.LocationFacility) = rtrim(df.FacilityID)
 left join GL_ACCOUNT_TBL gl on l.ACCOUNT = gl.ACCOUNT
+
+
 
 END
 GO
 grant exec on tb_LineVolume to public
 GO
+
+
+
+

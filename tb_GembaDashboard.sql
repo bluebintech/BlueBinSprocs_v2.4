@@ -68,6 +68,7 @@ select
 	AdditionalComments,
 	case
 		when AdditionalComments like '%'+ @GembaIdentifier + '%' then 'Yes' else 'No' end as GembaIdent
+--into tableau.GembaDashboard
 from  [bluebin].[DimLocation] dl
 		left join [gemba].[GembaAuditNode] g on dl.LocationID = g.LocationID
 		left join (select Max([Date]) as MaxDate,LocationID from [gemba].[GembaAuditNode] group by LocationID) g2 on dl.LocationID = g2.LocationID and g.[Date] = g2.MaxDate
@@ -79,7 +80,7 @@ from  [bluebin].[DimLocation] dl
 		left join bluebin.BlueBinRoles bbr on u.RoleID = bbr.RoleID
 		left join bluebin.DimFacility df on dl.LocationFacility = df.FacilityID
 WHERE dl.BlueBinFlag = 1 and (g.Active = 1 or g.Active is null)
-            order by dl.LocationID,[Date] asc
+            --order by dl.LocationID,[Date] asc
 
 END
 GO

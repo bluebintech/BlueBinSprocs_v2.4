@@ -4,13 +4,14 @@
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNode') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectGembaAuditNode
 GO
-
---exec sp_SelectGembaAuditNode '%','%','%'
+--Edited GB 20180208
+--exec sp_SelectGembaAuditNode '%','%','%','%'
 
 CREATE PROCEDURE sp_SelectGembaAuditNode
 @FacilityName varchar(50),
 @LocationName varchar(50),
-@Auditer varchar(50)
+@Auditer varchar(50),
+@ExpiredItems varchar(1)
 
 --WITH ENCRYPTION
 AS
@@ -34,6 +35,7 @@ SET NOCOUNT ON
     case when i.ImageSourceID is null then 'No' else 'Yes' end as Images,
 	q.AdditionalComments as AdditionalCommentsText,
     case when q.AdditionalComments ='' then 'No' else 'Yes' end [Addtl Comments],
+	case when q.PS_ExpiredItems = '5' then 'No' else 'Yes' end as ExpiredItems,
     q.LastUpdated
 from [gemba].[GembaAuditNode] q
 inner join bluebin.DimFacility df on q.FacilityID = df.FacilityID
@@ -44,6 +46,7 @@ left join (select distinct ImageSourceID from bluebin.Image where ImageSource li
 	and df.[FacilityName] LIKE '%' + @FacilityName + '%' 
 	and rtrim(dl.[LocationName]) + ' - ' +  dl.LocationID LIKE '%' + @LocationName + '%'
 	and u.LastName + ', ' + u.FirstName LIKE '%' + @Auditer + '%'
+	and q.PS_ExpiredItems like '%' + @ExpiredItems + '%'
 	order by q.Date desc
 
 END

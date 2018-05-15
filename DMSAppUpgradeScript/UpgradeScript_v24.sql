@@ -294,7 +294,36 @@ GO
 
 --*************************************************************************************************************************************
 --*************************************************************************************************************************************
-
+if not exists(select * from bluebin.Config where ConfigName = 'AvgCSPickTime')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'AvgCSPickTime','60',1,getdate(),'ROIandMGT','Average CS Pick Time'
+END
+GO
+if not exists(select * from bluebin.Config where ConfigName = 'AvgStatServiceTime')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'AvgStatServiceTime','60',1,getdate(),'ROIandMGT','Average Stat Service Time'
+END
+GO
+if not exists(select * from bluebin.Config where ConfigName = 'AvgStatWaitTime')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'AvgStatWaitTime','60',1,getdate(),'ROIandMGT','Average Stat Wait Time'
+END
+GO
+if not exists(select * from bluebin.Config where ConfigName = 'AvgNewNodeServiceTime')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'AvgNewNodeServiceTime','60',1,getdate(),'ROIandMGT','Average New Node Service Time (default)'
+END
+GO
+if not exists(select * from bluebin.Config where ConfigName = 'AvgOldNodeServiceTime')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'AvgOldNodeServiceTime','60',1,getdate(),'ROIandMGT','Average Old Node Service Time (default)'
+END
+GO
 
 /* PEOPLESOFT CONFIGS*/
 
@@ -436,6 +465,7 @@ BEGIN
 insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description]) VALUES
 ('OP-Bin Sequence','0',1,getdate(),'Reports','Setting for whether to display the Bin Sequence Report'),
 ('OP-CMR','0',1,getdate(),'Reports','Setting for whether to display Clinical Management Report'),
+('OP-OP-NewVsOld','0',1,getdate(),'Reports','Setting for whether to display New Vs Old Par Valuation Report'),
 ('OP-Stat Calls Detail','0',1,getdate(),'Reports','Setting for whether to display the Stat Calls Detail'),
 ('OP-Node Scorecard','0',1,getdate(),'Reports','Setting for whether to display the Node Scorecard'),
 ('OP-Gemba Auditor Details','0',1,getdate(),'Reports','Setting for whether to display the Gemba Auditor Details'),
@@ -562,7 +592,12 @@ select 'RQ500SubAccount','0000',1,getdate(),'Interface','Subaccount from the gen
 END
 GO
 
-
+if not exists(select * from bluebin.Config where ConfigName = 'WHSOHQtyMinimum')  
+BEGIN
+insert into bluebin.Config (ConfigName,ConfigValue,Active,LastUpdated,ConfigType,[Description])
+select 'WHSOHQtyMinimum','1',1,getdate(),'Tableau','Setting for Warehouse Detail to show all items (set to 0) or only with qty (1).'
+END
+GO
 
 if not exists(select * from bluebin.Config where ConfigName = 'QCN-ReferenceC')  
 BEGIN
@@ -676,7 +711,9 @@ CREATE TABLE [bluebin].[HistoricalDimBinJoin](
 	[FacilityID] int NOT NULL,
 	[OldLocationID] varchar(10) NOT NULL,
 	[OldLocationName] varchar(30) NOT NULL,
+	[OldLocationServiceTime] int NULL,
 	[NewLocationID] varchar(10) NOT NULL,
+	[NewLocationServiceTime] int NULL,
 	[LastUpdated] datetime NOT NULL
 )
 
@@ -1429,7 +1466,7 @@ CREATE TABLE [gemba].[GembaAuditNode](
 	[AdditionalComments] varchar(max) NULL,
     [PS_EmptyBins] int NOT NULL,
 	    [PS_BackBins] int NOT NULL,
-		    [PS_StockOuts] int NOT NULL,
+		    [PS_ExpiredItems] int NOT NULL,--[PS_StockOuts] int NOT NULL,
 			    [PS_ReturnVolume] int NOT NULL,
 				    [PS_NonBBT] int NOT NULL,
 						[PS_OrangeCones] int NOT NULL,
@@ -3632,6 +3669,7 @@ GO
 
 --*****************************************************
 --**************************SPROC**********************
+--Edited 20180205 GB
 
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNodeEdit') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectGembaAuditNodeEdit
@@ -3655,7 +3693,7 @@ select
 		,a.[AdditionalComments]
 		,a.[PS_EmptyBins]
 		,a.[PS_BackBins]
-		,a.[PS_StockOuts]
+		,a.[PS_ExpiredItems]--,a.[PS_StockOuts]
 		,a.[PS_ReturnVolume]
 		,a.[PS_NonBBT]
 		,a.[PS_OrangeCones]
@@ -3702,13 +3740,14 @@ GO
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectGembaAuditNode') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectGembaAuditNode
 GO
-
---exec sp_SelectGembaAuditNode '%','%','%'
+--Edited GB 20180208
+--exec sp_SelectGembaAuditNode '%','%','%','%'
 
 CREATE PROCEDURE sp_SelectGembaAuditNode
 @FacilityName varchar(50),
 @LocationName varchar(50),
-@Auditer varchar(50)
+@Auditer varchar(50),
+@ExpiredItems varchar(1)
 
 --WITH ENCRYPTION
 AS
@@ -3732,6 +3771,7 @@ SET NOCOUNT ON
     case when i.ImageSourceID is null then 'No' else 'Yes' end as Images,
 	q.AdditionalComments as AdditionalCommentsText,
     case when q.AdditionalComments ='' then 'No' else 'Yes' end [Addtl Comments],
+	case when q.PS_ExpiredItems = '5' then 'No' else 'Yes' end as ExpiredItems,
     q.LastUpdated
 from [gemba].[GembaAuditNode] q
 inner join bluebin.DimFacility df on q.FacilityID = df.FacilityID
@@ -3742,13 +3782,13 @@ left join (select distinct ImageSourceID from bluebin.Image where ImageSource li
 	and df.[FacilityName] LIKE '%' + @FacilityName + '%' 
 	and rtrim(dl.[LocationName]) + ' - ' +  dl.LocationID LIKE '%' + @LocationName + '%'
 	and u.LastName + ', ' + u.FirstName LIKE '%' + @Auditer + '%'
+	and q.PS_ExpiredItems like '%' + @ExpiredItems + '%'
 	order by q.Date desc
 
 END
 GO
 grant exec on sp_SelectGembaAuditNode to appusers
 GO
-
 
 
 
@@ -4128,7 +4168,7 @@ GO
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_UpdateGembaScores') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_UpdateGembaScores
 GO
-
+--Edited 20180205 GB
 --exec sp_UpdateGembaScores
 
 CREATE PROCEDURE sp_UpdateGembaScores
@@ -4138,7 +4178,7 @@ CREATE PROCEDURE sp_UpdateGembaScores
 AS
 BEGIN
 SET NOCOUNT ON
-Update gemba.GembaAuditNode set PS_TotalScore = (PS_EmptyBins+PS_BackBins+PS_StockOuts+PS_ReturnVolume+PS_NonBBT)
+Update gemba.GembaAuditNode set PS_TotalScore = (PS_EmptyBins+PS_BackBins+PS_ExpiredItems+PS_ReturnVolume+PS_NonBBT)
 Update gemba.GembaAuditNode set RS_TotalScore = (RS_BinsFilled+RS_BinServices+RS_NodeSwept+RS_NodeCorrections+RS_EmptiesCollected)
 Update gemba.GembaAuditNode set SS_TotalScore = ISNULL((SS_Supplied+SS_KanbansPP+SS_StockoutsPT+SS_StockoutsMatch+SS_HuddleBoardMatch),0)
 Update gemba.GembaAuditNode set NIS_TotalScore = (NIS_Labels+NIS_CardHolders+NIS_BinsRacks+NIS_GeneralAppearance+NIS_Signage)
@@ -4242,7 +4282,6 @@ GO
 grant exec on sp_InsertUser to appusers
 GO
 
-
 --*****************************************************
 --**************************SPROC**********************
 
@@ -4316,9 +4355,18 @@ IF (@Password = '' or @Password is null)
 	END
 
 	;
+	if @Active = 0
+	BEGIN
+	update bluebin.BlueBinResource set Active = @Active where Active = 1 and LastName +', ' + FirstName = @LastName +', ' + @FirstName 
+	END
+
+	;
 	set @message = 'User Updated - '+ @UserLogin
 	select @fakelogin = 'gbutler@bluebin.com'
 	exec sp_InsertMasterLog @fakelogin,'Users',@message,@BlueBinUserID
+
+
+
 END
 GO
 grant exec on sp_EditUser to appusers
@@ -4672,7 +4720,7 @@ GO
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditGembaAuditNode') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_EditGembaAuditNode
 GO
-
+--Edited 20180205 GB
 --exec sp_EditGembaAuditNode 'TEST'
 
 CREATE PROCEDURE sp_EditGembaAuditNode
@@ -4682,7 +4730,7 @@ CREATE PROCEDURE sp_EditGembaAuditNode
 @AdditionalComments varchar(max),
 @PS_EmptyBins int,
 @PS_BackBins int,
-@PS_StockOuts int,
+@PS_ExpiredItems int,--@PS_StockOuts int,
 @PS_ReturnVolume int,
 @PS_NonBBT int,
 @PS_OrangeCones int,
@@ -4725,7 +4773,7 @@ Update [gemba].[GembaAuditNode] SET
            ,[AdditionalComments] = @AdditionalComments
            ,[PS_EmptyBins] = @PS_EmptyBins
            ,[PS_BackBins] = @PS_BackBins
-           ,[PS_StockOuts] = @PS_StockOuts
+           ,[PS_ExpiredItems] = @PS_ExpiredItems--,[PS_StockOuts] = @PS_StockOuts
            ,[PS_ReturnVolume] = @PS_ReturnVolume
            ,[PS_NonBBT] = @PS_NonBBT
 		   ,[PS_OrangeCones] = @PS_OrangeCones
@@ -4781,7 +4829,7 @@ GO
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertGembaAuditNode') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_InsertGembaAuditNode
 GO
-
+--Edited 20180205 GB
 --exec sp_InsertGembaAuditNode 'TEST'
 
 CREATE PROCEDURE sp_InsertGembaAuditNode
@@ -4791,7 +4839,7 @@ CREATE PROCEDURE sp_InsertGembaAuditNode
 @AdditionalComments varchar(max),
 @PS_EmptyBins int,
 @PS_BackBins int,
-@PS_StockOuts int,
+@PS_ExpiredItems int,--@PS_StockOuts int,
 @PS_ReturnVolume int,
 @PS_NonBBT int,
 @PS_OrangeCones int,
@@ -4839,7 +4887,7 @@ Insert into [gemba].[GembaAuditNode]
 	AdditionalComments,
 	PS_EmptyBins,
 	PS_BackBins,
-	PS_StockOuts,
+	PS_ExpiredItems,--PS_StockOuts,
 	PS_ReturnVolume,
 	PS_NonBBT,
 	PS_OrangeCones,
@@ -4879,7 +4927,7 @@ getdate(),  --Date
 @AdditionalComments,
 @PS_EmptyBins,
 @PS_BackBins,
-@PS_StockOuts,
+@PS_ExpiredItems,--@PS_StockOuts,
 @PS_ReturnVolume,
 @PS_NonBBT,
 @PS_OrangeCones,
@@ -5077,37 +5125,6 @@ GO
 grant exec on sp_SelectTableauURL to appusers
 GO
 
---*****************************************************
---**************************SPROC**********************
-
-if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectConesLocation') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure sp_SelectConesLocation
-GO
-
---exec sp_SelectConesLocation
-CREATE PROCEDURE sp_SelectConesLocation
-
---WITH ENCRYPTION
-AS
-BEGIN
-SET NOCOUNT ON
-Select distinct a.LocationID,rTrim(a.ItemID) as ItemID,COALESCE(b.ItemClinicalDescription,b.ItemDescription,'No Description'),rTrim(a.ItemID)+ ' - ' + COALESCE(b.ItemClinicalDescription,b.ItemDescription,'No Description') as ExtendedDescription 
-from [bluebin].[DimBin] a 
-                                inner join [bluebin].[DimItem] b on rtrim(a.ItemID) = rtrim(b.ItemID)  
-								UNION 
-								select distinct LocationID,'' as ItemID,'' as ItemClinicalDescription, '--Select--'  as ExtendedDescription from [bluebin].[DimBin]
-                                       
-								--UNION 
-								--select distinct q.LocationID,rTrim(q.ItemID) as ItemID,COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description'),rTrim(q.ItemID)+ ' - ' + COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description') as ExtendedDescription  
-								--from qcn.QCN q
-								--inner join bluebin.DimItem di on q.ItemID = di.ItemID
-								--inner join bluebin.DimLocation dl on q.LocationID = dl.LocationID
-                                       order by 4 asc
-
-END
-GO
-grant exec on sp_SelectConesLocation to appusers
-GO
 
 
 
@@ -6103,14 +6120,16 @@ GO
 
 --*****************************************************
 --**************************SPROC**********************
+--Updated 20180122 GB
 
 if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectConesDeployed') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure sp_SelectConesDeployed
 GO
 
---exec sp_SelectConesDeployed '',''
+--exec sp_SelectConesDeployed '','',''
 
 CREATE PROCEDURE sp_SelectConesDeployed
+@Facility varchar(10),
 @Location varchar(10),
 @Item varchar(32)
 
@@ -6142,6 +6161,8 @@ SET NOCOUNT ON
 	left outer join (select distinct FacilityID,LocationID,ItemID from tableau.Kanban where StockOut = 1 and [Date] = (select max([Date]) from tableau.Kanban)) so 
 		on cd.FacilityID = so.FacilityID and cd.LocationID = so.LocationID and cd.ItemID = so.ItemID
 	where cd.Deleted = 0 and cd.ConeReturned = 0
+	and
+		(df.FacilityName like '%' + @Facility + '%' or df.FacilityID like '%' + @Facility + '%')
 	and
 		(dl.LocationName like '%' + @Location + '%' or dl.LocationID like '%' + @Location + '%')
 	and 
@@ -6249,6 +6270,100 @@ GO
 grant exec on sp_EditConesDeployed to appusers
 GO
 
+
+--*****************************************************
+--**************************SPROC**********************
+--Updated 20180122 GB
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectConesItem') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectConesItem
+GO
+
+--exec sp_SelectConesItem
+CREATE PROCEDURE sp_SelectConesItem
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+Select distinct a.LocationID,rTrim(a.ItemID) as ItemID,COALESCE(b.ItemClinicalDescription,b.ItemDescription,'No Description'),rTrim(a.ItemID)+ ' - ' + COALESCE(b.ItemClinicalDescription,b.ItemDescription,'No Description') as ExtendedDescription 
+from [bluebin].[DimBin] a 
+                                inner join [bluebin].[DimItem] b on rtrim(a.ItemID) = rtrim(b.ItemID)  
+								UNION 
+								select distinct LocationID,'' as ItemID,'' as ItemClinicalDescription, '--Select--'  as ExtendedDescription from [bluebin].[DimBin]
+                                       
+								--UNION 
+								--select distinct q.LocationID,rTrim(q.ItemID) as ItemID,COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description'),rTrim(q.ItemID)+ ' - ' + COALESCE(di.ItemClinicalDescription,di.ItemDescription,'No Description') as ExtendedDescription  
+								--from qcn.QCN q
+								--inner join bluebin.DimItem di on q.ItemID = di.ItemID
+								--inner join bluebin.DimLocation dl on q.LocationID = dl.LocationID
+                                       order by 4 asc
+
+END
+GO
+grant exec on sp_SelectConesItem to appusers
+GO
+
+--*****************************************************
+--**************************SPROC**********************
+--Updated 20180122 GB
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectConesLocation') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectConesLocation
+GO
+
+--exec sp_SelectConesLocation
+CREATE PROCEDURE sp_SelectConesLocation
+
+--WITH ENCRYPTION
+AS
+BEGIN
+
+SET NOCOUNT ON
+
+select 
+	distinct 
+	q.[LocationID],
+    rtrim(dl.[LocationName]) + ' - ' + dl.LocationID as LocationName
+	from bluebin.ConesDeployed q
+	left join [bluebin].[DimLocation] dl on q.LocationID = dl.LocationID and dl.BlueBinFlag = 1
+	order by LocationID
+END
+GO
+grant exec on sp_SelectConesLocation to appusers
+GO
+
+
+--*****************************************************
+--**************************SPROC**********************
+--Updated 20180122 GB
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectConesFacility') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectConesFacility
+GO
+
+--exec sp_SelectConesFacility
+CREATE PROCEDURE sp_SelectConesFacility
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+select 
+	distinct 
+	cd.[FacilityID],
+    df.FacilityName as FacilityName
+	from bluebin.ConesDeployed cd
+	inner join [bluebin].[DimFacility] df on cd.FacilityID = df.FacilityID 
+	order by df.FacilityName
+END
+GO
+grant exec on sp_SelectConesFacility to appusers
+GO
+
+
+
 --*****************************************************
 --**************************SPROC**********************
 
@@ -6274,7 +6389,8 @@ SET NOCOUNT ON
 	('DMS'),
 	('Interface'),
 	('Other'),
-	('TimeStudy')
+	('TimeStudy'),
+	('ROIandMGT')
 
 	SELECT * from @ConfigType order by 1 asc
 	
@@ -7951,6 +8067,170 @@ grant exec on sp_DeleteTimeStudyBinFill to appusers
 GO
 
 
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_SelectHistoricalDimBinJoin') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_SelectHistoricalDimBinJoin
+GO
+
+--exec sp_SelectHistoricalDimBinJoin
+
+CREATE PROCEDURE sp_SelectHistoricalDimBinJoin
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	SELECT 
+	hdb.HistoricalDimBinJoinID,
+	hdb.FacilityID,
+	df.FacilityName,
+	hdb.OldLocationID,
+	hdb.OldLocationName,
+	hdb.OldLocationServiceTime,
+	hdb.NewLocationID,
+	dl.LocationName as NewLocationName,
+	hdb.NewLocationServiceTime,
+	LastUpdated 
+FROM bluebin.[HistoricalDimBinJoin] hdb
+	inner join bluebin.DimFacility df on hdb.FacilityID = df.FacilityID
+	inner join bluebin.DimLocation dl on hdb.FacilityID = dl.LocationFacility and hdb.NewLocationID = dl.LocationID
+	--where Active like '%' + @Active + '%'
+order by 
+	hdb.FacilityID,
+	df.FacilityName,
+	hdb.OldLocationID,
+	hdb.OldLocationName,
+	hdb.NewLocationID,
+	dl.LocationName
+	
+	
+
+END
+GO
+grant exec on sp_SelectHistoricalDimBinJoin to appusers
+GO
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_EditHistoricalDimBinJoin') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_EditHistoricalDimBinJoin
+GO
+
+--exec sp_EditHistoricalDimBinJoin '6','NEW','TestOld 5',61,'BB006',61
+--exec sp_SelectHistoricalDimBinJoin   select * from bluebin.HistoricalDimBinJoin
+
+CREATE PROCEDURE sp_EditHistoricalDimBinJoin
+@HistoricalDimBinJoinID int,
+@OldLocationID varchar(10),
+@OldLocationName varchar(30),
+@OldLocationServiceTime int,
+@NewLocationID varchar(10),
+@NewLocationServiceTime int
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	
+	Update 
+	bluebin.HistoricalDimBinJoin 
+	set 
+	OldLocationID = @OldLocationID,
+	OldLocationName = @OldLocationName,
+	NewLocationID = @NewLocationID, 
+	[LastUpdated]= getdate(),
+	OldLocationServiceTime = @OldLocationServiceTime,
+	NewLocationServiceTime = @NewLocationServiceTime
+	where HistoricalDimBinJoinID = @HistoricalDimBinJoinID
+	
+END
+
+GO
+grant exec on sp_EditHistoricalDimBinJoin to appusers
+GO
+
+
+
+--*****************************************************
+--**************************SPROC**********************
+--Updated GB 201820 Added ServiceTimes
+
+if exists (select * from dbo.sysobjects where id = object_id(N'sp_InsertHistoricalDimBinJoin') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_InsertHistoricalDimBinJoin
+GO
+
+--exec sp_InsertHistoricalDimBinJoin '6','New','TestOld2','BB002'   
+
+CREATE PROCEDURE sp_InsertHistoricalDimBinJoin
+@FacilityID int,
+@OldLocationID varchar(10),
+@OldLocationName varchar(30),
+@OldLocationServiceTime int,
+@NewLocationID varchar(10),
+@NewLocationServiceTime int
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+
+if not exists (select * from bluebin.HistoricalDimBinJoin where NewLocationID = @NewLocationID)
+BEGIN
+
+--select * from bluebin.HistoricalDimBinJoin
+insert into bluebin.HistoricalDimBinJoin (FacilityID,OldLocationID,OldLocationName,OldLocationServiceTime,NewLocationID,NewLocationServiceTime,LastUpdated) 
+VALUES (
+@FacilityID,
+@OldLocationID,
+@OldLocationName,
+@OldLocationServiceTime,
+@NewLocationID,
+@NewLocationServiceTime
+,getdate()
+)
+
+END
+
+END
+GO
+grant exec on sp_InsertHistoricalDimBinJoin to appusers
+GO
+
+
+--*****************************************************
+--**************************SPROC**********************
+
+if exists (Select * from dbo.sysobjects where id = object_id(N'sp_DeleteHistoricalDimBinJoin') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure sp_DeleteHistoricalDimBinJoin
+GO
+
+--exec sp_DeleteHistoricalDimBinJoin '4'
+
+CREATE PROCEDURE sp_DeleteHistoricalDimBinJoin
+@HistoricalDimBinJoinID int
+
+
+--WITH ENCRYPTION
+AS
+BEGIN
+SET NOCOUNT ON
+	--select * from bluebin.[HistoricalDimBinJoin]
+	delete from bluebin.[HistoricalDimBinJoin] where HistoricalDimBinJoinID = @HistoricalDimBinJoinID
+
+END
+GO
+grant exec on sp_DeleteHistoricalDimBinJoin to appusers
+GO
+
+
+
+
 
 
 --*****************************************************
@@ -8248,355 +8528,7 @@ GO
 grant exec on ssp_ReqLookup to public
 GO
 
---*****************************************************
---**************************SPROC**********************
 
-
-if exists (select * from dbo.sysobjects where id = object_id(N'sp_CleanLawsonTables') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure sp_CleanLawsonTables
-GO
-
---exec sp_CleanLawsonTables
-
-CREATE PROCEDURE sp_CleanLawsonTables
---WITH ENCRYPTION
-AS
-BEGIN
-
-if exists (select * from sys.tables where name = 'APCOMPANY')
-BEGIN
-truncate table dbo.APCOMPANY
-END
-
-if exists (select * from sys.tables where name = 'APVENMAST')
-BEGIN
-truncate table dbo.APVENMAST
-END
-
-if exists (select * from sys.tables where name = 'BUYER')
-BEGIN
-truncate table dbo.BUYER
-END
-
-if exists (select * from sys.tables where name = 'GLCHARTDTL')
-BEGIN
-truncate table dbo.GLCHARTDTL
-END
-
-if exists (select * from sys.tables where name = 'GLNAMES')
-BEGIN
-truncate table dbo.GLNAMES
-END
-
-if exists (select * from sys.tables where name = 'GLTRANS')
-BEGIN
-truncate table dbo.GLTRANS
-END
-
-if exists (select * from sys.tables where name = 'ICCATEGORY')
-BEGIN
-truncate table dbo.ICCATEGORY
-END
-
-if exists (select * from sys.tables where name = 'ICMANFCODE')
-BEGIN
-truncate table dbo.ICMANFCODE
-END
-
-if exists (select * from sys.tables where name = 'ICLOCATION')
-BEGIN
-truncate table dbo.ICLOCATION
-END
-
-if exists (select * from sys.tables where name = 'ICTRANS')
-BEGIN
-truncate table dbo.ICTRANS
-END
-
-if exists (select * from sys.tables where name = 'ITEMLOC')
-BEGIN
-truncate table dbo.ITEMLOC
-END
-
-if exists (select * from sys.tables where name = 'ITEMMAST')
-BEGIN
-truncate table dbo.ITEMMAST
-END
-
-if exists (select * from sys.tables where name = 'ITEMSRC')
-BEGIN
-truncate table dbo.ITEMSRC
-END
-
-if exists (select * from sys.tables where name = 'MAINVDTL')
-BEGIN
-truncate table dbo.MAINVDTL
-END
-
-if exists (select * from sys.tables where name = 'MAINVMSG')
-BEGIN
-truncate table dbo.MAINVMSG
-END
-
-if exists (select * from sys.tables where name = 'MMDIST')
-BEGIN
-truncate table dbo.MMDIST
-END
-
-if exists (select * from sys.tables where name = 'POCODE')
-BEGIN
-truncate table dbo.POCODE
-END
-
-if exists (select * from sys.tables where name = 'POLINE')
-BEGIN
-truncate table dbo.POLINE
-END
-
-if exists (select * from sys.tables where name = 'POLINESRC')
-BEGIN
-truncate table dbo.POLINESRC
-END
-
-if exists (select * from sys.tables where name = 'PORECLINE')
-BEGIN
-truncate table dbo.PORECLINE
-END
-
-if exists (select * from sys.tables where name = 'POVAGRMTLN')
-BEGIN
-truncate table dbo.POVAGRMTLN
-END
-
-if exists (select * from sys.tables where name = 'PURCHORDER')
-BEGIN
-truncate table dbo.PURCHORDER
-END
-
-if exists (select * from sys.tables where name = 'REQHEADER')
-BEGIN
-truncate table dbo.REQHEADER
-END
-
-if exists (select * from sys.tables where name = 'REQLINE')
-BEGIN
-truncate table dbo.REQLINE
-END
-
-if exists (select * from sys.tables where name = 'REQUESTER')
-BEGIN
-truncate table dbo.REQUESTER
-END
-
-if exists (select * from sys.tables where name = 'RQLOC')
-BEGIN
-truncate table dbo.RQLOC
-END
-
-if exists (select * from sys.tables where name = 'RQLMXVAL')
-BEGIN
-truncate table dbo.RQLMXVAL
-END
-
-END
-
-GO
-grant exec on sp_CleanLawsonTables to public
-GO
-
-
-
-
-
-
---*****************************************************
---**************************SPROC**********************
-
-if exists (select * from dbo.sysobjects where id = object_id(N'sp_CleanPeoplesoftTables') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-drop procedure sp_CleanPeoplesoftTables
-GO
-
---exec sp_CleanPeoplesoftTables
-
-CREATE PROCEDURE sp_CleanPeoplesoftTables
---WITH ENCRYPTION
-AS
-BEGIN
-
-if exists (select * from sys.tables where name = 'BRAND_NAMES_INV')
-BEGIN
-truncate table dbo.BRAND_NAMES_INV
-END
-
-if exists (select * from sys.tables where name = 'BU_ATTRIB_INV')
-BEGIN
-truncate table dbo.BU_ATTRIB_INV
-END
-
-if exists (select * from sys.tables where name = 'BU_ITEMS_INV')
-BEGIN
-truncate table dbo.BU_ITEMS_INV
-END
-
-if exists (select * from sys.tables where name = 'CART_ATTRIB_INV')
-BEGIN
-truncate table dbo.CART_ATTRIB_INV
-END
-
-if exists (select * from sys.tables where name = 'CART_CT_INF_INV')
-BEGIN
-truncate table dbo.CART_CT_INF_INV
-END
-
-if exists (select * from sys.tables where name = 'DEMAND_INF_INV')
-BEGIN
-truncate table dbo.DEMAND_INF_INV
-END
-
-if exists (select * from sys.tables where name = 'CART_TEMPL_INV')
-BEGIN
-truncate table dbo.CART_TEMPL_INV
-END
-
-if exists (select * from sys.tables where name = 'IN_DEMAND')
-BEGIN
-truncate table dbo.IN_DEMAND
-END
-
-if exists (select * from sys.tables where name = 'ITEM_MFG')
-BEGIN
-truncate table dbo.ITEM_MFG
-END
-
-if exists (select * from sys.tables where name = 'ITM_VENDOR')
-BEGIN
-truncate table dbo.ITM_VENDOR
-END
-
-if exists (select * from sys.tables where name = 'LOCATION_TBL')
-BEGIN
-truncate table dbo.LOCATION_TBL
-END
-
-if exists (select * from sys.tables where name = 'MANUFACTURER')
-BEGIN
-truncate table dbo.MANUFACTURER
-END
-
-if exists (select * from sys.tables where name = 'MASTER_ITEM_TBL')
-BEGIN
-truncate table dbo.MASTER_ITEM_TBL
-END
-
-if exists (select * from sys.tables where name = 'PO_HDR')
-BEGIN
-truncate table dbo.PO_HDR
-END
-
-if exists (select * from sys.tables where name = 'PO_LINE')
-BEGIN
-truncate table dbo.PO_LINE
-END
-
-if exists (select * from sys.tables where name = 'PO_LINE_DISTRIB')
-BEGIN
-truncate table dbo.PO_LINE_DISTRIB
-END
-
-if exists (select * from sys.tables where name = 'PURCH_ITEM_ATTR')
-BEGIN
-truncate table dbo.PURCH_ITEM_ATTR
-END
-
-if exists (select * from sys.tables where name = 'PURCH_ITEM_BU')
-BEGIN
-truncate table dbo.PURCH_ITEM_BU
-END
-
-if exists (select * from sys.tables where name = 'RECV_HDR')
-BEGIN
-truncate table dbo.RECV_HDR
-END
-
-if exists (select * from sys.tables where name = 'RECV_LN_DISTRIB')
-BEGIN
-truncate table dbo.RECV_LN_DISTRIB
-END
-
-if exists (select * from sys.tables where name = 'RECV_LN_SHIP')
-BEGIN
-truncate table dbo.RECV_LN_SHIP
-END
-
-if exists (select * from sys.tables where name = 'REQ_HDR')
-BEGIN
-truncate table dbo.REQ_HDR
-END
-
-if exists (select * from sys.tables where name = 'REQ_LINE')
-BEGIN
-truncate table dbo.REQ_LINE
-END
-
-if exists (select * from sys.tables where name = 'REQ_LN_DISTRIB')
-BEGIN
-truncate table dbo.REQ_LN_DISTRIB
-END
-
-if exists (select * from sys.tables where name = 'VENDOR')
-BEGIN
-truncate table dbo.VENDOR
-END
-
-
-if exists (select * from sys.tables where name = 'REQ_LINE_SHIP')
-BEGIN
-truncate table dbo.REQ_LINE_SHIP
-END
-
-if exists (select * from sys.tables where name = 'DEPT_TBL')
-BEGIN
-truncate table dbo.DEPT_TBL
-END
-
-if exists (select * from sys.tables where name = 'GL_ACCOUNT_TBL')
-BEGIN
-truncate table dbo.GL_ACCOUNT_TBL
-END
-
-if exists (select * from sys.tables where name = 'JRNL_HEADER')
-BEGIN
-truncate table dbo.JRNL_HEADER
-END
-
-if exists (select * from sys.tables where name = 'JRNL_LN')
-BEGIN
-truncate table dbo.JRNL_LN
-END
-
-if exists (select * from sys.tables where name = 'CM_ACCTG_LINE')
-BEGIN
-truncate table dbo.CM_ACCTG_LINE
-END
-
-if exists (select * from sys.tables where name = 'RECV_LN_ACCTG')
-BEGIN
-truncate table dbo.RECV_LN_ACCTG
-END
-
-if exists (select * from sys.tables where name = 'VCHR_ACCTG_LINE')
-BEGIN
-truncate table dbo.VCHR_ACCTG_LINE
-END
-
-
-
-
-END
-
-GO
-grant exec on sp_CleanPeoplesoftTables to public
-GO
 
 
 
@@ -8875,7 +8807,7 @@ Print 'Job Updates Complete'
 
 
 
-declare @version varchar(50) = '2.4.20171123' --Update Version Number here
+declare @version varchar(50) = '2.4.20180322' --Update Version Number here
 
 
 if not exists (select * from bluebin.Config where ConfigName = 'Version')

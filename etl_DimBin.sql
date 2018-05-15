@@ -3,6 +3,7 @@
 			DimBin
 
 ***********************************************************/
+--Updated GB 20170423 Added logic on the costing to match with WH report, and Company to Bin Added Date (Trinity)
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -39,6 +40,7 @@ GROUP  BY REQ_LOCATION
 
 --**New Bin Added Dates
 select 
+il.COMPANY,
 il.LOCATION as REQ_LOCATION,
 il.ITEM,
 --item.BinAddedDate,
@@ -73,7 +75,8 @@ from ITEMLOC il
 	FROM   REQLINE a INNER JOIN bluebin.DimLocation b ON a.REQ_LOCATION = b.LocationID
 	WHERE  b.BlueBinFlag = 1
 	GROUP  BY REQ_LOCATION,ITEM) item on il.LOCATION = item.REQ_LOCATION and il.ITEM = item.ITEM
---WHERE il.ITEM in ('1346','27305') and il.LOCATION = 'DN036' order by 2,1
+--WHERE il.ITEM in ('239839') and il.LOCATION = 'KBICU' 
+
 
 SELECT Row_number()
          OVER(
@@ -81,7 +84,7 @@ SELECT Row_number()
            ORDER BY CREATION_DATE DESC) AS Itemreqseq,
        ITEM,
        ENTERED_UOM,
-       UNIT_COST
+       case when UNIT_COST = 0 then NULL else UNIT_COST end as UNIT_COST
 INTO   #ItemReqs
 FROM   REQLINE a INNER JOIN bluebin.DimLocation b ON ltrim(rtrim(a.REQ_LOCATION)) = ltrim(rtrim(b.LocationID))
 WHERE  b.BlueBinFlag = 1 
@@ -92,7 +95,7 @@ SELECT Row_number()
            ORDER BY PO_NUMBER DESC) AS ItemOrderSeq,
        ITEM,
        ENT_BUY_UOM,
-       ENT_UNIT_CST
+       case when ENT_UNIT_CST = 0 then NULL else ENT_UNIT_CST end as ENT_UNIT_CST
 INTO   #ItemOrders
 FROM   POLINE
 WHERE  ITEM_TYPE IN ( 'I', 'N' )
@@ -100,10 +103,26 @@ WHERE  ITEM_TYPE IN ( 'I', 'N' )
                     FROM   ITEMLOC a INNER JOIN bluebin.DimLocation b ON ltrim(rtrim(a.LOCATION)) = ltrim(rtrim(b.LocationID))
 WHERE  b.BlueBinFlag = 1)
 
+select ITEM,
+sum(ENT_UNIT_CST)/max(ItemOrderSeq) as ENT_UNIT_CST 
+into #ItemOrders2
+from 
+(
+SELECT Row_number()
+         OVER(
+           Partition BY ITEM--, ENT_BUY_UOM
+           ORDER BY PO_NUMBER DESC) AS ItemOrderSeq,
+       ITEM,
+	   ENT_UNIT_CST/EBUY_UOM_MULT as ENT_UNIT_CST
+FROM   POLINE
+WHERE  ITEM_TYPE IN ( 'I', 'N' ) and LOCATION in (Select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')
+--and ITEM = '00107'
+) a
+group by a.ITEM
 
-
-SELECT distinct a.ITEM,
-       --a.GL_CATEGORY,
+SELECT distinct 
+	a.COMPANY,a.ITEM,
+       a.GL_CATEGORY,
        max(b.ISS_ACCOUNT) as ISS_ACCOUNT--,a.LOCATION
 INTO   #ItemAccounts
 FROM   ITEMLOC a 
@@ -113,23 +132,26 @@ FROM   ITEMLOC a
 WHERE  
 a.LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION') 
 and a.ACTIVE_STATUS = 'A' 
-group by a.ITEM
+group by a.COMPANY,a.GL_CATEGORY,a.ITEM
 --order by a.ITEM
-       --,a.GL_CATEGORY
+       --
+
+	   
 
 
 
 
 SELECT distinct 
-i.ITEM,
-c.LAST_ISS_COST
+i.COMPANY,i.ITEM,
+case when c.LAST_ISS_COST = 0 then NULL else c.LAST_ISS_COST end as LAST_ISS_COST
 INTO   #ItemStore
 FROM   ITEMLOC i
-left join (select ITEMLOC.ITEM,max(ITEMLOC.LAST_ISS_COST) as LAST_ISS_COST from ITEMLOC
-				inner join (select ITEM,max(LAST_ISSUE_DT) as t from ITEMLOC group by ITEM) cost on ITEMLOC.ITEM = cost.ITEM and ITEMLOC.LAST_ISSUE_DT = cost.t
-				group by ITEMLOC.ITEM ) c on i.ITEM = c.ITEM
+left join (select ITEMLOC.COMPANY,ITEMLOC.ITEM,max(ITEMLOC.LAST_ISS_COST) as LAST_ISS_COST from ITEMLOC
+				inner join (select COMPANY,ITEM,max(LAST_ISSUE_DT) as t from ITEMLOC group by COMPANY,ITEM) cost on ITEMLOC.COMPANY = cost.COMPANY and ITEMLOC.ITEM = cost.ITEM and ITEMLOC.LAST_ISSUE_DT = cost.t
+				group by ITEMLOC.COMPANY,ITEMLOC.ITEM ) c on i.COMPANY = c.COMPANY and i.ITEM = c.ITEM
 WHERE  i.LOCATION in (select ConfigValue from bluebin.Config where ConfigName = 'LOCATION')  and i.ACTIVE_STATUS = 'A'  
---order by i.ITEM
+--and i.ITEM = '03728'
+--order by i.ITEM  select * from ITEMLOC where ITEM = '03728'
 
 SELECT distinct ITEM,CONSIGNMENT_FL 
 INTO #Consignment
@@ -166,7 +188,7 @@ SELECT Row_number()
              ELSE LEADTIME_DAYS
            END                                                                                        AS BinLeadTime,
            #BinAddDates.BinAddedDate                                                                  AS BinGoLiveDate,
-           COALESCE(COALESCE(#ItemReqs.UNIT_COST, #ItemOrders.ENT_UNIT_CST), #ItemStore.LAST_ISS_COST) AS BinCurrentCost,
+           COALESCE(COALESCE(#ItemReqs.UNIT_COST, #ItemOrders.ENT_UNIT_CST), #ItemStore.LAST_ISS_COST, #ItemOrders2.ENT_UNIT_CST,0) AS BinCurrentCost,
            CASE
 			 WHEN UPPER(ltrim(rtrim(ITEMLOC.USER_FIELD1))) in (Select ConfigValue from bluebin.Config where ConfigName = 'ConsignmentFlag') OR #Consignment.CONSIGNMENT_FL = 'Y'  THEN 'Y'
              ELSE 'N'
@@ -179,7 +201,7 @@ SELECT Row_number()
                    ON ltrim(rtrim(ITEMLOC.LOCATION)) = ltrim(rtrim(DimLocation.LocationID))
 				   AND ITEMLOC.COMPANY = DimLocation.LocationFacility			   
            INNER JOIN #BinAddDates
-                   ON ltrim(rtrim(ITEMLOC.LOCATION)) = ltrim(rtrim(#BinAddDates.REQ_LOCATION)) and ltrim(rtrim(ITEMLOC.ITEM)) = ltrim(rtrim(#BinAddDates.ITEM))
+                   ON ltrim(rtrim(ITEMLOC.COMPANY)) = ltrim(rtrim(#BinAddDates.COMPANY)) and ltrim(rtrim(ITEMLOC.LOCATION)) = ltrim(rtrim(#BinAddDates.REQ_LOCATION)) and ltrim(rtrim(ITEMLOC.ITEM)) = ltrim(rtrim(#BinAddDates.ITEM))
            LEFT JOIN #ItemReqs
                   ON ITEMLOC.ITEM = #ItemReqs.ITEM
                      AND ITEMLOC.UOM = #ItemReqs.ENTERED_UOM
@@ -188,13 +210,15 @@ SELECT Row_number()
                   ON ITEMLOC.ITEM = #ItemOrders.ITEM
                      AND ITEMLOC.UOM = #ItemOrders.ENT_BUY_UOM
                      AND #ItemOrders.ItemOrderSeq = 1
+			LEFT JOIN #ItemOrders2
+                  ON ITEMLOC.ITEM = #ItemOrders2.ITEM
            LEFT JOIN #ItemAccounts
-                  ON ITEMLOC.ITEM = #ItemAccounts.ITEM
+                  ON ITEMLOC.COMPANY = #ItemAccounts.COMPANY and ITEMLOC.ITEM = #ItemAccounts.ITEM
            LEFT JOIN #ItemStore
-                  ON ITEMLOC.ITEM = #ItemStore.ITEM
+                  ON ITEMLOC.COMPANY = #ItemStore.COMPANY and ITEMLOC.ITEM = #ItemStore.ITEM
 		   LEFT JOIN #Consignment
                   ON ITEMLOC.ITEM = #Consignment.ITEM
-	WHERE DimLocation.BlueBinFlag = 1
+	WHERE DimLocation.BlueBinFlag = 1 --and ITEMLOC.ITEM  = '102351' 
 	order by LocationID,ItemID
 	
 /*****************************************		DROP Temp Tables	**************************************/
@@ -202,6 +226,7 @@ SELECT Row_number()
 DROP TABLE #BinAddDates
 DROP TABLE #ItemReqs
 DROP TABLE #ItemOrders
+DROP TABLE #ItemOrders2
 DROP TABLE #ItemAccounts
 DROP TABLE #ItemStore
 DROP TABLE #Consignment
@@ -215,5 +240,3 @@ GO
 UPDATE etl.JobSteps
 SET LastModifiedDate = GETDATE()
 WHERE StepName = 'DimBin'
-
-

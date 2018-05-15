@@ -37,7 +37,14 @@ ISNULL(i.NewCt,0) as NewCt,
 ISNULL(i2.ItemID,'') as OldItem,
 ISNULL(i2.BinQty,0) as OldParCount,
 ISNULL(i2.AvgCost,0) as OldCost,
-ISNULL(i2.OldCt,0) as OldCt
+ISNULL(i2.OldCt,0) as OldCt,
+case when i.ItemID is null and i2.ItemID is not null then 1 else 0 end as RemovedCt,
+case when i2.ItemID is null and i.ItemID is not null then 1 else 0 end as AddedCt,
+case when i.ItemID is not null and i2.ItemID is not null then 1 else 0 end as StayedCt
+
+
+
+
 from		(
 			select i.BinFacility as FacilityID,i.LocationID as NewLocationID,lj.NewLocationName,i.ItemID,i.BinQty,i.BinUOM,p.AvgCost,lj.OldLocationID,lj.OldLocationName,1 as NewCt from bluebin.DimBin i
 			left join (
@@ -70,7 +77,10 @@ A.OldLocationName as OldNodeHeader,
 sum(A.NewCt) as NewCt,
 sum(A.OldCt) as OldCt,
 sum(A.NewParCount*A.NewCost) as NewCost,
-sum(A.OldParCount*A.OldCost) as OldCost
+sum(A.OldParCount*A.OldCost) as OldCost,
+sum(A.RemovedCt) as RemovedCt,
+sum(A.AddedCt) as AddedCt,
+sum(A.StayedCt) as StayedCt
 
 from A
 inner join bluebin.DimFacility df on A.FacilityID = df.FacilityID

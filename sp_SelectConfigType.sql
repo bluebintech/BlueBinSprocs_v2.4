@@ -24,7 +24,8 @@ SET NOCOUNT ON
 	('DMS'),
 	('Interface'),
 	('Other'),
-	('TimeStudy')
+	('TimeStudy'),
+	('ROIandMGT')
 
 	SELECT * from @ConfigType order by 1 asc
 	

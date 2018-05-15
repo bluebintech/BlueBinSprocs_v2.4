@@ -45,11 +45,15 @@ from
 	(select distinct BUSINESS_UNIT from CART_CT_INF_INV) a
 	left join dbo.BUS_UNIT_TBL_FS bu on a.BUSINESS_UNIT = bu.BUSINESS_UNIT
 	where @DefaultFacility not in (select FacilityID from bluebin.DimFacility)
-
+group by 
+a.BUSINESS_UNIT,
+bu.DESCR
 END 
 ELSE
 BEGIN
-INSERT INTO bluebin.DimFacility 
+ 
+declare @DefaultFacility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
+INSERT INTO bluebin.DimFacility
 select 
 ROW_NUMBER() OVER (ORDER BY a.BUSINESS_UNIT),
 a.BUSINESS_UNIT,
@@ -59,7 +63,11 @@ from
 	left join dbo.BUS_UNIT_TBL_FS bu on a.BUSINESS_UNIT = bu.BUSINESS_UNIT
 	where @DefaultFacility not in (select FacilityID from bluebin.DimFacility)
 	and a.BUSINESS_UNIT not in (select FacilityName from bluebin.DimFacility)
+group by 
+a.BUSINESS_UNIT,
+bu.DESCR
 END
+--select * from bluebin.DimFacility
 
 END
 GO

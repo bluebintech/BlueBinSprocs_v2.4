@@ -4,6 +4,10 @@
 			Sourcing
 
 ***************************************************************************/
+--Updated GB 20180319  grouped the POLine query to remove dupes
+--Updated GB 20180308  grouped the MMDist query to remove dupes
+--Updated JB 20180131
+--Updated GB 20180108
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -39,23 +43,23 @@ SELECT a.COMPANY,
        a.ITEM_TYPE,
        a.DESCRIPTION AS PO_DESCRIPTION,
        a.QUANTITY,
-       a.REC_QTY,
+       max(a.REC_QTY) as REC_QTY,
        a.AGREEMENT_REF,
        a.ENT_UNIT_CST,
        a.ENT_BUY_UOM,
        case when a.EBUY_UOM_MULT < 1 then 1 else a.EBUY_UOM_MULT end as EBUY_UOM_MULT,
        b.PO_DATE,
-       a.EARLY_DL_DATE,
-       a.LATE_DL_DATE,
-       a.REC_ACT_DATE,
-       a.CLOSE_DATE,
+       max(a.EARLY_DL_DATE) as EARLY_DL_DATE,
+       max(a.LATE_DL_DATE) as LATE_DL_DATE,
+       max(a.REC_ACT_DATE) as REC_ACT_DATE,
+       max(a.CLOSE_DATE) as CLOSE_DATE,
        a.LOCATION,
        a.BUYER_CODE,
        a.VENDOR,
        d.OPER_COMPANY,
 	   d.REQ_LOCATION,
        a.VEN_ITEM,
-       a.CLOSED_FL,
+       max(a.CLOSED_FL) as CLOSED_FL,
        a.CXL_QTY,
        c.INVOICE_AMT,
 	   dt.DELIVER_TO
@@ -80,13 +84,46 @@ FROM   POLINE a
                  AND a.LINE_NBR = d.LINE_NBR
                  AND a.PO_CODE = d.PO_CODE
 				 AND a.PO_RELEASE = d.PO_RELEASE
-		left join (select distinct pls.PO_NUMBER,rh.DELIVER_TO from REQHEADER rh INNER JOIN POLINESRC pls on rh.REQ_NUMBER = pls.SOURCE_DOC_N) dt
+		left join (select distinct pls.PO_NUMBER,rh.DELIVER_TO 
+		                           , rh.COMPANY  -- jbb 01/31/2018
+		              from REQHEADER rh INNER JOIN POLINESRC pls on rh.REQ_NUMBER = pls.SOURCE_DOC_N) dt
 			ON a.PO_NUMBER = dt.PO_NUMBER
+			AND a.COMPANY = dt.COMPANY  -- jbb 01/31/2018 
 WHERE  b.PO_DATE >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE') 
 		--AND b.PO_RELEASE = 0
        AND a.CXL_QTY = 0
-	   
+	   --and a.PO_NUMBER like '%678280%' and a.LINE_NBR = '5'
 	   --and a.PO_NUMBER like '%593273%'
+group by
+	   a.COMPANY,
+       a.PO_NUMBER,
+       a.PO_RELEASE,
+       a.PO_CODE,
+       a.LINE_NBR,
+       a.ITEM,
+       a.ITEM_TYPE,
+       a.DESCRIPTION,
+       a.QUANTITY,
+       --a.REC_QTY,
+       a.AGREEMENT_REF,
+       a.ENT_UNIT_CST,
+       a.ENT_BUY_UOM,
+       case when a.EBUY_UOM_MULT < 1 then 1 else a.EBUY_UOM_MULT end,
+       b.PO_DATE,
+       --a.EARLY_DL_DATE,
+       --a.LATE_DL_DATE,
+       --a.REC_ACT_DATE,
+       --a.CLOSE_DATE,
+       a.LOCATION,
+       a.BUYER_CODE,
+       a.VENDOR,
+       d.OPER_COMPANY,
+	   d.REQ_LOCATION,
+       a.VEN_ITEM,
+       --a.CLOSED_FL,
+       a.CXL_QTY,
+       c.INVOICE_AMT,
+	   dt.DELIVER_TO
 
 
 --#tmpMMDIST
@@ -106,9 +143,13 @@ WHERE  SYSTEM_CD = 'PO'
        AND a.DOC_NUMBER IN (SELECT PO_NUMBER
                           FROM   PURCHORDER
                           WHERE  PO_DATE >= (select ConfigValue from bluebin.Config where ConfigName = 'PO_DATE'))
-						  --and a.DOC_NUMBER like '%643587%'
+						  --and a.DOC_NUMBER like '%232426%' and a.LINE_NBR = '7'
 						  --and a.DOC_NUMBER like '%389266%' order by 2
-
+GROUP BY
+	a.DOC_NUMBER,
+       a.LINE_NBR,
+       a.ACCT_UNIT,
+       b.DESCRIPTION
 
 --#tmpPOStatus
 SELECT Row_number()
@@ -165,8 +206,11 @@ FROM   #tmpPOLines a
                  AND a.LINE_NBR = b.LINE_NBR 
 		LEFT JOIN (select distinct BUYER_CODE,NAME from BUYER) c
 		ON a.BUYER_CODE = c.BUYER_CODE
-		LEFT JOIN APVENMAST d ON a.VENDOR = d.VENDOR
-
+		--LEFT JOIN APVENMAST d ON a.VENDOR = d.VENDOR
+		LEFT JOIN (select a.VENDOR,a.VENDOR_GROUP,a.VENDOR_VNAME from APVENMAST a
+					inner join (select VENDOR,max(VENDOR_GROUP) as VENDOR_GROUP from APVENMAST  group by VENDOR) 
+					b on a.VENDOR_GROUP = b.VENDOR_GROUP and a.VENDOR = b.VENDOR) d
+			ON ltrim(rtrim(a.VENDOR)) = ltrim(rtrim(d.VENDOR))
 
 --#tmpPOs
 
@@ -210,12 +254,17 @@ INTO   tableau.Sourcing
 FROM   #tmpPOs a
 LEFT JOIN bluebin.DimLocation dl on ltrim(rtrim(a.PurchaseLocation)) = ltrim(rtrim(dl.LocationID)) and ltrim(rtrim(a.PurchaseFacility)) = ltrim(rtrim(dl.LocationFacility))
 LEFT JOIN bluebin.DimFacility df on ltrim(rtrim(a.PurchaseFacility)) = ltrim(rtrim(df.FacilityID))
+--where PONumber like '%166345%'
+
+--select count(*) from tableau.Sourcing
 /***********************		DROP Temp Tables	**************************/
 
 DROP TABLE #tmpPOLines
 DROP TABLE #tmpMMDIST
 DROP TABLE #tmpPOStatus
 DROP TABLE #tmpPOs
+
+
 
 GO
 

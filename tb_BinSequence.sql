@@ -1,6 +1,7 @@
 --*********************************************************************************************
 --Tableau Sproc  These load data into the datasources for Tableau
 --*********************************************************************************************
+--Updated GB 20180320  Updated the logic to show a Cart
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -98,7 +99,12 @@ END AS OutOfSequenceValue,
 0 AS OutofSequenceCount,
 
 CASE
-   WHEN A.BinSequence LIKE '%CD' THEN 'Card'
+   WHEN A.BinSequence LIKE '%CD' 
+		or A.BinSequence LIKE '%CO'  
+		or A.BinSequence LIKE '%CS'  
+		or A.BinSequence LIKE '%CF' 
+		or A.BinSequence LIKE '%CP' 
+		or A.BinSequence LIKE '%CR' THEN 'Card'
    ELSE 'Bin'
 END AS BinOrCard 
 

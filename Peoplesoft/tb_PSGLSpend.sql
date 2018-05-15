@@ -1,3 +1,7 @@
+--*********************************************************************************************
+--Tableau Sproc  These load data into the datasources for Tableau
+--*********************************************************************************************
+
 if exists (select * from dbo.sysobjects where id = object_id(N'tb_GLSpend') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
 drop procedure tb_GLSpend
 GO
@@ -10,13 +14,15 @@ CREATE PROCEDURE tb_GLSpend
 AS
 BEGIN
 --SET NOCOUNT ON
-declare @DefaultFacility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
+declare @Facility int = (select ConfigValue from bluebin.Config where ConfigName = 'PS_DefaultFacility')
+declare @FacilityName varchar(30) = (select PSFacilityName from bluebin.DimFacility where FacilityID = @Facility)
+
 
 SELECT 
 jh.FISCAL_YEAR as FiscalYear,
 jh.ACCOUNTING_PERIOD AS AcctPeriod,
-@DefaultFacility as COMPANY,
-df.FacilityName,
+COALESCE(df.FacilityID,@Facility) as COMPANY,
+COALESCE(df.FacilityName,@FacilityName) as FacilityName,
 ISNULL(jl.ACCOUNT,'N/A') as Account,                                                                                                              
 ISNULL((jl.ACCOUNT + '-' + gl.DESCR),'N/A') AS AccountDesc,     
 ISNULL(d.DEPTID,'N/A') AS  AcctUnit,
@@ -32,17 +38,23 @@ FROM   JRNL_HEADER jh
 	LEFT JOIN (select d.DEPTID,d.DESCR from DEPT_TBL d
 					inner join (select DEPTID,max(EFFDT) as EFFDT from DEPT_TBL where EFF_STATUS = 'A' group by DEPTID) a on d.DEPTID = a.DEPTID and d.EFFDT = a.EFFDT
 					) d on jl.DEPTID = d.DEPTID
-	LEFT JOIN bluebin.DimFacility df on @DefaultFacility = df.FacilityID
+	LEFT JOIN bluebin.DimFacility df on jh.BUSINESS_UNIT = df.FacilityName
+
 WHERE  
-jl.ACCOUNT in (select ConfigValue from bluebin.Config where ConfigName = 'GLSummaryAccountID')
+
+(jl.ACCOUNT in (select ConfigValue from bluebin.Config where ConfigName = 'GLSummaryAccountID')
 --or gl.DESCR like '%supply%' or gl.DESCR like '%supplies%'
-or gl.ACCOUNT in (select ACCOUNT from [bluebin].[PeoplesoftGLAccount])
+or gl.ACCOUNT in (select ACCOUNT from [bluebin].[PeoplesoftGLAccount]))
+
 
 GROUP  BY 
 jh.FISCAL_YEAR,
 jh.POSTED_DATE,
 jh.ACCOUNTING_PERIOD,
+df.FacilityID,
 df.FacilityName,
+
+
 jl.ACCOUNT,
 gl.DESCR,
 d.DEPTID,

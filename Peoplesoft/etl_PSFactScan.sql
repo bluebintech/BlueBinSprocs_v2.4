@@ -4,6 +4,11 @@
 			FactScan
 
 *************************************************/
+--Edited GB 20180430.  Updated the IN_DEMAND portion for to COALESCE DEMAND_DATE and SCHED_DTTM.  This pulls alternate orderdate
+--Edited GB 20180423.  Updated the IN_DEMAND portion for tmpLines to look into IN_FULFILL_STATE for max to eliminate cancellations (state = 90)
+--Edited GB 20180307.  Updated PO_ID to account for leading zeroes with NYCH
+--Edited 20180209 GB
+
 
 IF EXISTS ( SELECT  *
             FROM    sys.objects
@@ -50,66 +55,86 @@ WITH FirstScans
 		select
 		LocationID,
 		ItemID,
-		COALESCE(DEMAND_DATE,SCHED_DTTM,NULL) as FirstScanDate
+		COALESCE(DEMAND_DATE,SCHED_DTTM,LOC_DATE,BIN_DATE,NULL) as FirstScanDate
 		from 
 				(
 				SELECT db.LocationID,
 					   db.ItemID,
+					   lt.LOC_DATE,
 						Min(ct.DEMAND_DATE) AS DEMAND_DATE,
-						min(id.SCHED_DTTM) as SCHED_DTTM
+						min(id.SCHED_DTTM) as SCHED_DTTM,
+						min(db.BinGoLiveDate) as BIN_DATE
 				 FROM   bluebin.DimBin db
 				 LEFT JOIN dbo.CART_CT_INF_INV ct on db.LocationID = ct.INV_CART_ID and db.ItemID = ct.INV_ITEM_ID and ct.CART_COUNT_QTY > 0 AND ct.PROCESS_INSTANCE > 0
 				 LEFT JOIN IN_DEMAND id on db.LocationID = id.LOCATION and db.ItemID = id.INV_ITEM_ID
+				 LEFT JOIN (Select INV_CART_ID,min(DEMAND_DATE) as LOC_DATE from dbo.CART_CT_INF_INV where CART_COUNT_QTY > 0 AND PROCESS_INSTANCE > 0 group by INV_CART_ID) lt on db.LocationID = lt.INV_CART_ID 
 				 GROUP  BY 
 				 db.LocationID,
-				  db.ItemID
+				 db.ItemID,
+				 lt.LOC_DATE
 				  ) a 
 				   
-				   ),
+				   )
+				   
+				   ,
+
 --**************************
 Orders
      AS (
 	 SELECT Row_number()
                   OVER(
-                    PARTITION BY PO_LN.INV_ITEM_ID, PO_LN_DST.LOCATION, PO_HDR.PO_DT
+                    PARTITION BY Bins.ItemID, PO_LN_DST.LOCATION, PO_HDR.PO_DT
                     ORDER BY PO_LN.PO_ID, PO_LN.LINE_NBR) AS DailySeq,
                 Bins.BinKey,
 				--Bins.BinGoLiveDate,
-                PO_LN.INV_ITEM_ID                         AS ItemID,
+                Bins.ItemID									AS ItemID, --Original PO_LN.INV_ITEM_ID
                 PO_LN_DST.LOCATION                        AS LocationID,
                 PO_LN.PO_ID                               AS OrderNum,
                 PO_LN.LINE_NBR                            AS LineNum,
-                RECEIPT_DTTM                              AS CloseDate,
+                SHIP.RECEIPT_DTTM                         AS CloseDate,
                 QTY_PO                                    AS OrderQty,
                 PO_LN.UNIT_OF_MEASURE                     AS OrderUOM,
                 DATEADD(hour,@POTimeAdjust,PO_HDR.PO_DT) as PO_DT
+				--PO_HDR.PO_DT
          FROM   dbo.PO_LINE_DISTRIB PO_LN_DST
                 INNER JOIN dbo.PO_LINE PO_LN
                         ON PO_LN_DST.PO_ID = PO_LN.PO_ID
                            AND PO_LN_DST.LINE_NBR = PO_LN.LINE_NBR
                 INNER JOIN dbo.PO_HDR
                         ON PO_LN.PO_ID = PO_HDR.PO_ID
+							AND PO_LN.BUSINESS_UNIT = PO_HDR.BUSINESS_UNIT
                 INNER JOIN bluebin.DimBin Bins
-                        ON PO_LN.INV_ITEM_ID = Bins.ItemID
+                        ON RIGHT(('000000000000000000' + PO_LN.INV_ITEM_ID),18) = RIGHT(('000000000000000000' + Bins.ItemID),18) 
                            AND Bins.LocationID = PO_LN_DST.LOCATION
                 LEFT JOIN
 					(select PO_ID,LINE_NBR,max(RECEIPT_DTTM) as RECEIPT_DTTM from dbo.RECV_LN_SHIP group by PO_ID,LINE_NBR) SHIP
 						ON PO_LN.PO_ID = SHIP.PO_ID
                           AND PO_LN.LINE_NBR = SHIP.LINE_NBR
 				--LEFT JOIN dbo.RECV_LN_SHIP SHIP
-    --                   ON PO_LN.PO_ID = SHIP.PO_ID
+    --                   ON PO_LN.PO_ID = SHIP.PO_IDselect * from RECV_LN_SHIP 
     --                      AND PO_LN.LINE_NBR = SHIP.LINE_NBR
                 LEFT JOIN FirstScans
-                       ON PO_LN.INV_ITEM_ID = FirstScans.ItemID
+                       ON RIGHT(('000000000000000000' + PO_LN.INV_ITEM_ID),18) = RIGHT(('000000000000000000' + FirstScans.ItemID),18)
                           AND PO_LN_DST.LOCATION = FirstScans.LocationID
          WHERE  (LEFT(PO_LN_DST.LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
 				or PO_LN_DST.LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
                 AND ISNULL(PO_LN.CANCEL_STATUS,'') NOT IN ( 'X', 'D', 'PX' )
-				--AND PO_LN_DST.LOCATION = 'B039012050' --and PO_LN.INV_ITEM_ID = '1000234' 
+				--AND PO_LN_DST.LOCATION = '16401PED02' and PO_LN.INV_ITEM_ID = '100177' and PO_LN.PO_ID = '0000008230' 
 				--and DATEADD(hour,@POTimeAdjust,PO_HDR.PO_DT) > getdate() -5
                 --AND PO_LN_DST.BUSINESS_UNIT_GL = 209
+		GROUP BY 
+				Bins.BinKey,
+				PO_LN_DST.LOCATION,
+				Bins.ItemID, --Original PO_LN.INV_ITEM_ID
+                PO_LN.PO_ID,
+                PO_LN.LINE_NBR,
+                SHIP.RECEIPT_DTTM,
+				QTY_PO,
+                PO_LN.UNIT_OF_MEASURE,
+                PO_HDR.PO_DT
 				)
-
+				
+				
 				,
 
 
@@ -152,34 +177,49 @@ FROM   Orders a
                   AND a.DailySeq = b.DailySeq 
 
 UNION ALL
+
 SELECT Bins.BinKey,
 --Bins.BinGoLiveDate,
-       INV_ITEM_ID as ItemID,
-       LOCATION as LocationID,
+       Picks.INV_ITEM_ID as ItemID,
+       Picks.LOCATION as LocationID,
        Picks.ORDER_NO as OrderNum,
        Picks.ORDER_INT_LINE_NO as LineNum,
-       Picks.SCHED_DTTM as OrderDate,
-       Picks.PICK_CONFIRM_DTTM as CloseDate,
+       COALESCE(Picks.SCHED_DTTM,Picks.DEMAND_DATE) as OrderDate,
+       max(Picks.PICK_CONFIRM_DTTM) as CloseDate,
        Cast(Picks.QTY_REQUESTED AS INT) AS OrderQty,
 	   UNIT_OF_MEASURE as OrderUOM,
 	   CASE
          WHEN Picks.ORDER_NO LIKE 'MSR%' THEN 'MSR'
          ELSE 'Pick' end as OrderType,
-		case when IN_FULFILL_STATE = '70' and QTY_PICKED = '0' or IN_FULFILL_STATE = '90' then 'Yes' else 'No' end as Cancelled
+		case when (Picks.IN_FULFILL_STATE = '70' and Picks.QTY_PICKED = '0') or can.IN_FULFILL_STATE = '90' then 'Yes' else 'No' end as Cancelled
 
 FROM   dbo.IN_DEMAND Picks
        INNER JOIN bluebin.DimBin Bins
-               ON Picks.LOCATION = Bins.LocationID
-                  AND Picks.INV_ITEM_ID = Bins.ItemID
+               ON Picks.LOCATION = Bins.LocationID AND Picks.INV_ITEM_ID = Bins.ItemID
+		left join (select LOCATION,INV_ITEM_ID,ORDER_NO,ORDER_INT_LINE_NO,max(PICK_CONFIRM_DTTM) as PICK_CONFIRM_DTTM,max(IN_FULFILL_STATE) as IN_FULFILL_STATE from IN_DEMAND GROUP BY LOCATION,INV_ITEM_ID,ORDER_NO,ORDER_INT_LINE_NO) can
+				ON Picks.LOCATION = can.LOCATION AND Picks.INV_ITEM_ID = can.INV_ITEM_ID AND Picks.ORDER_NO = can.ORDER_NO and Picks.ORDER_INT_LINE_NO = can.ORDER_INT_LINE_NO
 		LEFT JOIN FirstScans
 		ON Picks.INV_ITEM_ID = FirstScans.ItemID AND Picks.LOCATION = FirstScans.LocationID
-WHERE  (LEFT(LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
-		or LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
+WHERE  (LEFT(Picks.LOCATION, 2) COLLATE DATABASE_DEFAULT IN (SELECT [ConfigValue] FROM   [bluebin].[Config] WHERE  [ConfigName] = 'REQ_LOCATION' AND Active = 1) 
+		or Picks.LOCATION COLLATE DATABASE_DEFAULT in (Select REQ_LOCATION from bluebin.ALT_REQ_LOCATION))
        AND (CANCEL_DTTM IS NULL  or CANCEL_DTTM < '1900-01-02')
 	   AND DEMAND_DATE >= FirstScanDate --ISNULL(FirstScanDate,Bins.BinGoLiveDate)
-
+	  --and Picks.ORDER_NO like '%420290%' 
+	  --and IN_FULFILL_STATE <> '20'
+Group By
+	   Bins.BinKey,
+       Picks.INV_ITEM_ID,
+       Picks.LOCATION,
+       Picks.ORDER_NO,
+       Picks.ORDER_INT_LINE_NO,
+       COALESCE(Picks.SCHED_DTTM,Picks.DEMAND_DATE),
+       Cast(Picks.QTY_REQUESTED AS INT),
+	   UNIT_OF_MEASURE,
+	   CASE
+         WHEN Picks.ORDER_NO LIKE 'MSR%' THEN 'MSR'
+         ELSE 'Pick' end,
+		case when (Picks.IN_FULFILL_STATE = '70' and Picks.QTY_PICKED = '0') or can.IN_FULFILL_STATE = '90' then 'Yes' else 'No' end
 	   )
-	   
 	   ,
 --**************************	   
 tmpOrders 
@@ -271,10 +311,10 @@ FROM   Scans a
               ON a.ItemID = d.ItemID
 	   
 WHERE  a.OrderDate >= db.BinGoLiveDate and a.OrderUOM <> '0' and a.OrderQty <> '0'--and a.OrderDate > getdate() -360--and d.ItemKey = '18710' and 
---and a.OrderNum = '0000383593'
+--and a.OrderNum = '0000000553'
 Order by BinKey,ScanHistseq asc
 
-
+--select * from bluebin.FactScan where OrderNum = '0000000553'
 
 GO
 
